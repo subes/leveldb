@@ -62,6 +62,7 @@ public final class MergingIterator
 
     private void resetPriorityQueue(Comparator<InternalKey> comparator)
     {
+        priorityQueue.clear();
         int i = 1;
         for (InternalIterator level : levels) {
             if (level.hasNext()) {
