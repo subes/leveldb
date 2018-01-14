@@ -58,7 +58,7 @@ public class VersionSetTest
     private Level newLevel()
     {
         InternalKeyComparator internalKeyComparator = new InternalKeyComparator(new BytewiseComparator());
-        return new Level(1, files, new TableCache(new File("xxxxxxxxxxx"), 0, new BytewiseComparator(), new Options()), internalKeyComparator);
+        return new Level(1, files, new TableCache(new File("xxxxxxxxxxx"), 0, new BytewiseComparator(), new Options(), EnvImpl.createEnv()), internalKeyComparator);
     }
 
     boolean overlaps(String smallest, String largest)

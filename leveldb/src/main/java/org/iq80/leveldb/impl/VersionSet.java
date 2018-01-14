@@ -29,7 +29,6 @@ import org.iq80.leveldb.util.InternalIterator;
 import org.iq80.leveldb.util.Level0Iterator;
 import org.iq80.leveldb.util.MergingIterator;
 import org.iq80.leveldb.util.SequentialFile;
-import org.iq80.leveldb.util.SequentialFileImpl;
 import org.iq80.leveldb.util.Slice;
 
 import java.io.File;
@@ -78,18 +77,18 @@ public class VersionSet
     private final File databaseDir;
     private final TableCache tableCache;
     private final InternalKeyComparator internalKeyComparator;
-    private final boolean allowMmapWrites;
+    private final Env env;
 
     private LogWriter descriptorLog;
     private final Map<Integer, InternalKey> compactPointers = new TreeMap<>();
 
-    public VersionSet(File databaseDir, TableCache tableCache, InternalKeyComparator internalKeyComparator, boolean allowMmapWrites)
+    public VersionSet(File databaseDir, TableCache tableCache, InternalKeyComparator internalKeyComparator, Env env)
             throws IOException
     {
         this.databaseDir = databaseDir;
         this.tableCache = tableCache;
         this.internalKeyComparator = internalKeyComparator;
-        this.allowMmapWrites = allowMmapWrites;
+        this.env = env;
         appendVersion(new Version(this));
 
         initializeIfNeeded();
@@ -107,7 +106,7 @@ public class VersionSet
             edit.setNextFileNumber(nextFileNumber.get());
             edit.setLastSequenceNumber(lastSequence);
 
-            LogWriter log = Logs.createLogWriter(new File(databaseDir, Filename.descriptorFileName(manifestFileNumber)), manifestFileNumber, allowMmapWrites);
+            LogWriter log = Logs.createLogWriter(new File(databaseDir, Filename.descriptorFileName(manifestFileNumber)), manifestFileNumber, env);
             try {
                 writeSnapshot(log);
                 log.addRecord(edit.encode(), false);
@@ -280,7 +279,7 @@ public class VersionSet
             // a temporary file that contains a snapshot of the current version.
             if (descriptorLog == null) {
                 edit.setNextFileNumber(nextFileNumber.get());
-                descriptorLog = Logs.createLogWriter(new File(databaseDir, Filename.descriptorFileName(mFileNumber)), mFileNumber, allowMmapWrites);
+                descriptorLog = Logs.createLogWriter(new File(databaseDir, Filename.descriptorFileName(mFileNumber)), mFileNumber, env);
                 writeSnapshot(descriptorLog);
                 createdNewManifest = true;
             }
@@ -348,7 +347,7 @@ public class VersionSet
         currentName = currentName.substring(0, currentName.length() - 1);
 
         // open file channel
-        try (SequentialFile in = SequentialFileImpl.open(new File(databaseDir, currentName))) {
+        try (SequentialFile in = env.newSequentialFile(new File(databaseDir, currentName))) {
             // read log edit log
             Long nextFileNumber = null;
             Long lastSequence = null;

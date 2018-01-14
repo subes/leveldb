@@ -790,7 +790,7 @@ public abstract class TableTest
                     .errorIfExists(true)
                     .writeBufferSize(10000);  // Something small to force merging
             tmpDir = FileUtils.createTempDir("leveldb");
-            this.db = new DbImpl(options, tmpDir, new EnvImpl());
+            this.db = new DbImpl(options, tmpDir, EnvImpl.createEnv());
             for (Map.Entry<Slice, Slice> entry : kvMap.entrySet()) {
                 db.put(entry.getKey().getBytes(), entry.getValue().getBytes());
             }

@@ -24,7 +24,6 @@ import org.iq80.leveldb.DBFactory;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.util.FileUtils;
 import org.testng.annotations.AfterMethod;
-import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.io.File;
@@ -60,21 +59,11 @@ public class ApiTest
         return rc;
     }
 
-    @DataProvider(name = "options")
-    public Object[][] optionsProvider()
-    {
-        return new Object[][] {
-                {"mm/mm", new Options().createIfMissing(true).allowMmapWrites(true).allowMmapReads(true).compressionType(CompressionType.NONE)},
-                {"mm/raf", new Options().createIfMissing(true).allowMmapWrites(true).allowMmapReads(false).compressionType(CompressionType.NONE)},
-                {"raf/mm", new Options().createIfMissing(true).allowMmapWrites(false).allowMmapReads(true).compressionType(CompressionType.NONE)},
-                {"raf/raf", new Options().createIfMissing(true).allowMmapWrites(false).allowMmapReads(false).compressionType(CompressionType.NONE)},
-        };
-    }
-
-    @Test(invocationCount = 2, dataProvider = "options")
-    public void testCompaction(String op, Options options)
+    @Test
+    public void testCompaction()
             throws IOException, DBException
     {
+        Options options = new Options().createIfMissing(true).compressionType(CompressionType.NONE);
         File path = getTestDirectory("testCompaction");
         DB db = factory.open(path, options);
 

@@ -41,17 +41,14 @@ import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.DbIterator;
 import org.iq80.leveldb.util.MergingIterator;
 import org.iq80.leveldb.util.SequentialFile;
-import org.iq80.leveldb.util.SequentialFileImpl;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceInput;
 import org.iq80.leveldb.util.SliceOutput;
 import org.iq80.leveldb.util.Slices;
 import org.iq80.leveldb.util.Snappy;
-import org.iq80.leveldb.util.UnbufferedWritableFile;
 import org.iq80.leveldb.util.WritableFile;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.ArrayList;
@@ -170,7 +167,7 @@ public class DbImpl
 
         // Reserve ten files or so for other uses and give the rest to TableCache.
         int tableCacheSize = options.maxOpenFiles() - 10;
-        tableCache = new TableCache(databaseDir, tableCacheSize, new InternalUserComparator(internalKeyComparator), options);
+        tableCache = new TableCache(databaseDir, tableCacheSize, new InternalUserComparator(internalKeyComparator), options, env);
 
         // create the version set
 
@@ -197,7 +194,7 @@ public class DbImpl
                 checkArgument(!options.errorIfExists(), "Database '%s' exists and the error if exists option is enabled", databaseDir);
             }
 
-            versions = new VersionSet(databaseDir, tableCache, internalKeyComparator, options.allowMmapWrites());
+            versions = new VersionSet(databaseDir, tableCache, internalKeyComparator, env);
 
             // load  (and recover) current version
             versions.recover();
@@ -236,7 +233,7 @@ public class DbImpl
 
             // open transaction log
             long logFileNumber = versions.getNextFileNumber();
-            this.log = Logs.createLogWriter(new File(databaseDir, Filename.logFileName(logFileNumber)), logFileNumber, options.allowMmapWrites());
+            this.log = Logs.createLogWriter(new File(databaseDir, Filename.logFileName(logFileNumber)), logFileNumber, env);
             edit.setLogNumber(log.getFileNumber());
 
             // apply recovered edits
@@ -589,7 +586,7 @@ public class DbImpl
     {
         checkState(mutex.isHeldByCurrentThread());
         File file = new File(databaseDir, Filename.logFileName(fileNumber));
-        try (SequentialFile in = SequentialFileImpl.open(file);) {
+        try (SequentialFile in = env.newSequentialFile(file)) {
             LogMonitor logMonitor = LogMonitors.logMonitor();
             LogReader logReader = new LogReader(in, logMonitor, true, 0);
 
@@ -1035,7 +1032,7 @@ public class DbImpl
                 // open a new log
                 long logNumber = versions.getNextFileNumber();
                 try {
-                    this.log = Logs.createLogWriter(new File(databaseDir, Filename.logFileName(logNumber)), logNumber, options.allowMmapWrites());
+                    this.log = Logs.createLogWriter(new File(databaseDir, Filename.logFileName(logNumber)), logNumber, env);
                 }
                 catch (IOException e) {
                     throw new RuntimeException("Unable to open new log file " +
@@ -1130,7 +1127,7 @@ public class DbImpl
         try {
             InternalKey smallest = null;
             InternalKey largest = null;
-            try (WritableFile writableFile = UnbufferedWritableFile.open(file)) {
+            try (WritableFile writableFile = env.newWritableFile(file)) {
                 TableBuilder tableBuilder = new TableBuilder(options, writableFile, new InternalUserComparator(internalKeyComparator));
 
                 for (Entry<InternalKey, Slice> entry : data) {
@@ -1287,7 +1284,7 @@ public class DbImpl
     }
 
     private void openCompactionOutputFile(CompactionState compactionState)
-            throws FileNotFoundException
+            throws IOException
     {
         requireNonNull(compactionState, "compactionState is null");
         checkArgument(compactionState.builder == null, "compactionState builder is not null");
@@ -1306,7 +1303,7 @@ public class DbImpl
             mutex.unlock();
         }
         File file = new File(databaseDir, Filename.tableFileName(fileNumber));
-        compactionState.outfile = UnbufferedWritableFile.open(file);
+        compactionState.outfile = env.newWritableFile(file);
         compactionState.builder = new TableBuilder(options, compactionState.outfile, new InternalUserComparator(internalKeyComparator));
     }
 

@@ -156,7 +156,7 @@ public class LogTest
             throws Exception
     {
         tempFile = File.createTempFile("table", ".log");
-        writer = Logs.createLogWriter(tempFile, 42, Iq80DBFactory.USE_MMAP);
+        writer = Logs.createLogWriter(tempFile, 42, EnvImpl.createEnv());
     }
 
     @AfterMethod

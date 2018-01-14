@@ -33,8 +33,6 @@ public class Options
     private DBComparator comparator;
     private Logger logger;
     private long cacheSize;
-    private boolean allowMmapReads = true;
-    private boolean allowMmapWrites = true;
     private XFilterPolicy filterPolicy;
 
     public static Options fromOptions(Options options)
@@ -52,8 +50,6 @@ public class Options
         options1.comparator = options.comparator;
         options1.logger = options.logger;
         options1.cacheSize = options.cacheSize;
-        options1.allowMmapReads = options.allowMmapReads;
-        options1.allowMmapWrites = options.allowMmapWrites;
         options1.filterPolicy = options.filterPolicy;
         return options1;
     }
@@ -196,28 +192,6 @@ public class Options
     {
         this.paranoidChecks = paranoidChecks;
         return this;
-    }
-
-    public Options allowMmapReads(boolean allowMmapReads)
-    {
-        this.allowMmapReads = allowMmapReads;
-        return this;
-    }
-
-    public boolean allowMmapReads()
-    {
-        return allowMmapReads;
-    }
-
-    public Options allowMmapWrites(boolean allowMmapWrites)
-    {
-        this.allowMmapWrites = allowMmapWrites;
-        return this;
-    }
-
-    public boolean allowMmapWrites()
-    {
-        return allowMmapWrites;
     }
 
     /**

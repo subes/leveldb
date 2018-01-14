@@ -21,7 +21,6 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
-import com.google.common.cache.RemovalNotification;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.table.BlockHandle;
 import org.iq80.leveldb.table.BlockHandleSliceWeigher;
@@ -30,11 +29,9 @@ import org.iq80.leveldb.table.KeyValueFunction;
 import org.iq80.leveldb.table.Table;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.Closeables;
-import org.iq80.leveldb.util.UnbufferedRandomInputFile;
 import org.iq80.leveldb.util.Finalizer;
 import org.iq80.leveldb.util.InternalTableIterator;
 import org.iq80.leveldb.util.LRUCache;
-import org.iq80.leveldb.util.MMRandomInputFile;
 import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
 
@@ -53,22 +50,17 @@ public class TableCache
     public TableCache(final File databaseDir,
                       int tableCacheSize,
                       final UserComparator userComparator,
-                      final Options options)
+                      final Options options, Env env)
     {
         requireNonNull(databaseDir, "databaseName is null");
         blockCache = new LRUCache<>(options.cacheSize() > 0 ? (int) options.cacheSize() : 8 << 20, new BlockHandleSliceWeigher()); //TODO add possibility to disable cache?
         cache = CacheBuilder.newBuilder()
                 .maximumSize(tableCacheSize)
-                .removalListener(new RemovalListener<Long, TableAndFile>()
-                {
-                    @Override
-                    public void onRemoval(RemovalNotification<Long, TableAndFile> notification)
-                    {
-                        final TableAndFile value = notification.getValue();
-                        if (value != null) {
-                            final Table table = value.getTable();
-                            finalizer.addCleanup(table, table.closer());
-                        }
+                .removalListener((RemovalListener<Long, TableAndFile>) notification -> {
+                    final TableAndFile value = notification.getValue();
+                    if (value != null) {
+                        final Table table = value.getTable();
+                        finalizer.addCleanup(table, table.closer());
                     }
                 })
                 .build(new CacheLoader<Long, TableAndFile>()
@@ -77,7 +69,7 @@ public class TableCache
                     public TableAndFile load(Long fileNumber)
                             throws IOException
                     {
-                        return new TableAndFile(databaseDir, fileNumber, userComparator, options, blockCache);
+                        return new TableAndFile(databaseDir, fileNumber, userComparator, options, blockCache, env);
                     }
                 });
     }
@@ -135,18 +127,13 @@ public class TableCache
     {
         private final Table table;
 
-        private TableAndFile(File databaseDir, long fileNumber, UserComparator userComparator, Options options, LRUCache<BlockHandle, Slice> blockCache)
+        private TableAndFile(File databaseDir, long fileNumber, UserComparator userComparator, Options options, LRUCache<BlockHandle, Slice> blockCache, Env env)
                 throws IOException
         {
             final File tableFile = tableFileName(databaseDir, fileNumber);
             RandomInputFile source = null;
             try {
-                if (options.allowMmapReads()) {
-                    source = MMRandomInputFile.open(tableFile);
-                }
-                else {
-                    source = UnbufferedRandomInputFile.open(tableFile);
-                }
+                source = env.newRandomAccessFile(tableFile);
                 final FilterPolicy filterPolicy = (FilterPolicy) options.filterPolicy();
                 table = new Table(source, userComparator,
                         options.verifyChecksums(), blockCache, filterPolicy);
