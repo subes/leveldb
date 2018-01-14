@@ -115,7 +115,7 @@ public final class Slices
     public static Slice avoidCopiedBuffer(ByteBuffer source)
     {
         if (source.hasArray()) {
-            return new Slice(source.array(), source.arrayOffset(), source.remaining());
+            return new Slice(source.array(), source.arrayOffset() + source.position(), source.remaining());
         }
         else {
             return copiedBuffer(source);
