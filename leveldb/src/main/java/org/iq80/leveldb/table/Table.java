@@ -104,15 +104,26 @@ public final class Table
      */
     private LRUCache.LRUSubCache<BlockHandle, Slice> cacheForTable(LRUCache<BlockHandle, Slice> blockCache)
     {
-        final LRUCache<BlockHandle, Slice> cache = requireNonNull(blockCache, "Block cache should not be null");
-        return cache.subCache(new CacheLoader<BlockHandle, Slice>()
-        {
-            @Override
-            public Slice load(BlockHandle key) throws Exception
+        if (blockCache == null) {
+            return k -> {
+                try {
+                    return readRawBlock(k);
+                }
+                catch (IOException e) {
+                    throw new ExecutionException(e);
+                }
+            };
+        }
+        else {
+            return blockCache.subCache(new CacheLoader<BlockHandle, Slice>()
             {
-                return readRawBlock(key);
-            }
-        });
+                @Override
+                public Slice load(BlockHandle key) throws Exception
+                {
+                    return readRawBlock(key);
+                }
+            });
+        }
     }
 
     @Override
@@ -156,8 +167,9 @@ public final class Table
             throws IOException
     {
         // read block trailer
-        final ByteBuffer trailerData = source.read(blockHandle.getOffset() + blockHandle.getDataSize(), BlockTrailer.ENCODED_LENGTH);
-        final BlockTrailer blockTrailer = BlockTrailer.readBlockTrailer(Slices.avoidCopiedBuffer(trailerData));
+        final ByteBuffer content = source.read(blockHandle.getOffset(), blockHandle.getDataSize() + BlockTrailer.ENCODED_LENGTH);
+        content.mark().position(content.position() + blockHandle.getDataSize());
+        final BlockTrailer blockTrailer = BlockTrailer.readBlockTrailer(Slices.avoidCopiedBuffer(content));
 
 // todo re-enable crc check when ported to support direct buffers
 //        // only verify check sums if explicitly asked by the user
@@ -172,15 +184,16 @@ public final class Table
 
         // decompress data
         Slice uncompressedData;
-        ByteBuffer uncompressedBuffer = source.read(blockHandle.getOffset(), blockHandle.getDataSize());
+        content.reset();
+        content.limit(content.limit() - BlockTrailer.ENCODED_LENGTH);
         if (blockTrailer.getCompressionType() == SNAPPY) {
-            int uncompressedLength = uncompressedLength(uncompressedBuffer);
+            int uncompressedLength = uncompressedLength(content);
             final ByteBuffer uncompressedScratch = ByteBuffer.allocateDirect(uncompressedLength);
-            Snappy.uncompress(uncompressedBuffer, uncompressedScratch);
+            Snappy.uncompress(content, uncompressedScratch);
             uncompressedData = Slices.copiedBuffer(uncompressedScratch);
         }
         else {
-            uncompressedData = Slices.avoidCopiedBuffer(uncompressedBuffer);
+            uncompressedData = Slices.avoidCopiedBuffer(content);
         }
 
         return uncompressedData;

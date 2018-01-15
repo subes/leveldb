@@ -53,7 +53,7 @@ public class TableCache
                       final Options options, Env env)
     {
         requireNonNull(databaseDir, "databaseName is null");
-        blockCache = new LRUCache<>(options.cacheSize() > 0 ? (int) options.cacheSize() : 8 << 20, new BlockHandleSliceWeigher()); //TODO add possibility to disable cache?
+        blockCache = options.cacheSize() == 0 ? null : new LRUCache<>((int) options.cacheSize(), new BlockHandleSliceWeigher());
         cache = CacheBuilder.newBuilder()
                 .maximumSize(tableCacheSize)
                 .removalListener((RemovalListener<Long, TableAndFile>) notification -> {

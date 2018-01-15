@@ -32,7 +32,7 @@ public class Options
     private boolean paranoidChecks;
     private DBComparator comparator;
     private Logger logger;
-    private long cacheSize;
+    private long cacheSize = 8 << 20;
     private XFilterPolicy filterPolicy;
 
     public static Options fromOptions(Options options)

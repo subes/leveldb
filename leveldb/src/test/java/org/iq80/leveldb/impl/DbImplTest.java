@@ -34,8 +34,11 @@ import org.iq80.leveldb.WriteOptions;
 import org.iq80.leveldb.table.BloomFilterPolicy;
 import org.iq80.leveldb.util.DbIterator;
 import org.iq80.leveldb.util.FileUtils;
+import org.iq80.leveldb.util.RandomInputFile;
+import org.iq80.leveldb.util.SequentialFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
+import org.iq80.leveldb.util.WritableFile;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
@@ -45,6 +48,7 @@ import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -55,6 +59,8 @@ import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.google.common.collect.Maps.immutableEntry;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -237,11 +243,12 @@ public class DbImplTest
             throws Exception
     {
         // create db with small write buffer
-        DbStringWrapper db = new DbStringWrapper(options.writeBufferSize(100000), databaseDir);
+        SpecialEnv env = new SpecialEnv(EnvImpl.createEnv());
+        DbStringWrapper db = new DbStringWrapper(options.writeBufferSize(100000), databaseDir, env);
         db.put("foo", "v1");
         assertEquals(db.get("foo"), "v1");
 
-        // todo Block sync calls
+        env.delayDataSync.set(true);
 
         // Fill memtable
         db.put("k1", longString(100000, 'x'));
@@ -249,7 +256,7 @@ public class DbImplTest
         db.put("k2", longString(100000, 'y'));
         assertEquals(db.get("foo"), "v1");
 
-        // todo Release sync calls
+        env.delayDataSync.set(false);
     }
 
     @Test(dataProvider = "options")
@@ -1093,6 +1100,51 @@ public class DbImplTest
         assertEquals("0,0,1", filesPerLevel(db.db));
     }
 
+    @Test
+    public void testBloomFilter() throws Exception
+    {
+        SpecialEnv env = new SpecialEnv(EnvImpl.createEnv());
+        env.countRandomReads = true;
+        Options options = new Options()
+                .filterPolicy(new BloomFilterPolicy(10))
+                .cacheSize(0);
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir, env);
+        // Populate multiple layers
+        int n = 10000;
+        for (int i = 0; i < n; i++) {
+            db.put(key(i), key(i));
+        }
+        db.compact("a", "z");
+        for (int i = 0; i < n; i += 100) {
+            db.put(key(i), key(i));
+        }
+        db.db.testCompactMemTable();
+
+        // Prevent auto compactions triggered by seeks
+        env.delayDataSync.set(true);
+
+        // Lookup present keys.  Should rarely read from small sstable.
+        env.randomReadCounter.set(0);
+        for (int i = 0; i < n; i++) {
+            assertEquals(key(i), db.get(key(i)));
+        }
+        int reads = env.randomReadCounter.get();
+        System.out.println(filesPerLevel(db.db));
+        assertTrue(reads >= n, "no true that (reads>=n) " + reads + ">=" + n);
+        assertTrue(reads <= n + 2 * n / 100, "no true that (reads <= n + 2 * n / 100): " + reads + "<= " + n + " + 2 * " + n + " / 100");
+
+        // Lookup present keys.  Should rarely read from either sstable.
+        env.randomReadCounter.set(0);
+        for (int i = 0; i < n; i++) {
+            assertNull(db.get(key(i) + ".missing"));
+        }
+        reads = env.randomReadCounter.get();
+        assertTrue(reads <= 3 * n / 100);
+
+        env.delayDataSync.set(false);
+        db.close();
+    }
+
     // Do n memtable compactions, each of which produces an sstable
     // covering the range [small,large].
     private void makeTables(DbStringWrapper db, int n, String small, String large)
@@ -1325,9 +1377,15 @@ public class DbImplTest
         private DbStringWrapper(Options options, File databaseDir)
                 throws IOException
         {
+            this(options, databaseDir, EnvImpl.createEnv());
+        }
+
+        private DbStringWrapper(Options options, File databaseDir, Env env)
+                throws IOException
+        {
             this.options = options.verifyChecksums(true).createIfMissing(true).errorIfExists(true);
             this.databaseDir = databaseDir;
-            this.db = new DbImpl(options, databaseDir, EnvImpl.createEnv());
+            this.db = new DbImpl(options, databaseDir, env);
             opened.add(this);
         }
 
@@ -1391,17 +1449,7 @@ public class DbImplTest
 
         public void compact(String start, String limit)
         {
-            db.flushMemTable();
-            int maxLevelWithFiles = 1;
-            for (int level = 2; level < NUM_LEVELS; level++) {
-                if (db.numberOfFilesInLevel(level) > 0) {
-                    maxLevelWithFiles = level;
-                }
-            }
-            for (int level = 0; level < maxLevelWithFiles; level++) {
-                db.compactRange(level, Slices.copiedBuffer("", UTF_8), Slices.copiedBuffer("~", UTF_8));
-            }
-
+            db.compactRange(Slices.copiedBuffer(start, UTF_8).getBytes(), Slices.copiedBuffer(limit, UTF_8).getBytes());
         }
 
         public int numberOfFilesInLevel(int level)
@@ -1518,6 +1566,185 @@ public class DbImplTest
         private Entry<String, String> adapt(Entry<byte[], byte[]> next)
         {
             return immutableEntry(new String(next.getKey(), UTF_8), new String(next.getValue(), UTF_8));
+        }
+    }
+
+    private static class SpecialEnv implements Env
+    {
+        private Env env;
+        // sstable/log Sync() calls are blocked while this pointer is non-NULL.
+        private AtomicBoolean delayDataSync = new AtomicBoolean();
+
+        // sstable/log Sync() calls return an error.
+        private AtomicBoolean dataSyncError = new AtomicBoolean();
+
+        // Simulate no-space errors while this pointer is non-NULL.
+        private AtomicBoolean noSpace = new AtomicBoolean();
+
+        // Simulate non-writable file system while this pointer is non-NULL
+        private AtomicBoolean nonWritable = new AtomicBoolean();
+
+        // Force sync of manifest files to fail while this pointer is non-NULL
+        private AtomicBoolean manifestSyncError = new AtomicBoolean();
+
+        // Force write to manifest files to fail while this pointer is non-NULL
+        private AtomicBoolean manifestWriteError = new AtomicBoolean();
+        boolean countRandomReads;
+
+        AtomicInteger randomReadCounter = new AtomicInteger();
+
+        public SpecialEnv(Env env)
+        {
+            this.env = env;
+        }
+
+        @Override
+        public long nowMicros()
+        {
+            return env.nowMicros();
+        }
+
+        @Override
+        public SequentialFile newSequentialFile(File file) throws IOException
+        {
+            return env.newSequentialFile(file);
+        }
+
+        @Override
+        public RandomInputFile newRandomAccessFile(File file) throws IOException
+        {
+            RandomInputFile randomInputFile = env.newRandomAccessFile(file);
+            if (countRandomReads) {
+                return new CountingFile(randomInputFile);
+            }
+            return randomInputFile;
+        }
+
+        @Override
+        public WritableFile newWritableFile(File file) throws IOException
+        {
+            if (nonWritable.get()) {
+                throw new IOException("simulated write error");
+            }
+            if (file.getName().endsWith(".ldb") || file.getName().endsWith(".log")) {
+                return new DataFile(env.newWritableFile(file));
+            }
+            else {
+                return new ManifestFile(env.newWritableFile(file));
+            }
+        }
+
+        @Override
+        public WritableFile newAppendableFile(File file) throws IOException
+        {
+            return env.newAppendableFile(file);
+        }
+
+        private class CountingFile implements RandomInputFile
+        {
+            private RandomInputFile randomInputFile;
+
+            public CountingFile(RandomInputFile randomInputFile)
+            {
+                this.randomInputFile = randomInputFile;
+            }
+
+            @Override
+            public long size()
+            {
+                return randomInputFile.size();
+            }
+
+            @Override
+            public ByteBuffer read(long offset, int length) throws IOException
+            {
+                randomReadCounter.incrementAndGet();
+                return randomInputFile.read(offset, length);
+            }
+
+            @Override
+            public void close() throws IOException
+            {
+                randomInputFile.close();
+            }
+        }
+
+        private class DataFile implements WritableFile
+        {
+            private final WritableFile writableFile;
+
+            public DataFile(WritableFile writableFile)
+            {
+                this.writableFile = writableFile;
+            }
+
+            @Override
+            public void append(Slice data) throws IOException
+            {
+                if (noSpace.get()) {
+                    // Drop writes on the floor
+                }
+                else {
+                    writableFile.append(data);
+                }
+            }
+
+            @Override
+            public void force() throws IOException
+            {
+                if (dataSyncError.get()) {
+                    throw new IOException("simulated data sync error");
+                }
+                while (delayDataSync.get()) {
+                    try {
+                        Thread.sleep(100);
+                    }
+                    catch (InterruptedException e) {
+                        throw new IOException(e);
+                    }
+                }
+                writableFile.force();
+            }
+
+            @Override
+            public void close() throws IOException
+            {
+                writableFile.close();
+            }
+        }
+
+        private class ManifestFile implements WritableFile
+        {
+            private WritableFile writableFile;
+
+            public ManifestFile(WritableFile writableFile)
+            {
+                this.writableFile = writableFile;
+            }
+
+            @Override
+            public void append(Slice data) throws IOException
+            {
+                if (manifestWriteError.get()) {
+                    throw new IOException("simulated writer error");
+                }
+                writableFile.append(data);
+            }
+
+            @Override
+            public void force() throws IOException
+            {
+                if (manifestSyncError.get()) {
+                    throw new IOException("simulated sync error");
+                }
+                writableFile.force();
+            }
+
+            @Override
+            public void close() throws IOException
+            {
+                writableFile.close();
+            }
         }
     }
 }
