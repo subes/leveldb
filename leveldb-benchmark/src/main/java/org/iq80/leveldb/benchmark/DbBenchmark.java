@@ -40,7 +40,6 @@ import org.iq80.leveldb.util.Snappy;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Date;
@@ -63,7 +62,6 @@ public class DbBenchmark
     private final double compressionRatio;
     private final Map<Flag, Object> flags;
 
-    //    Cache cache_;
     private final List<String> benchmarks;
     private final int blockCacheSize;
     private final int bloomFilterBits;
@@ -108,6 +106,11 @@ public class DbBenchmark
         }
     }
 
+    private interface BenchmarkMethod
+    {
+        void run(ThreadState state) throws Exception;
+    }
+
     private void run()
             throws IOException
     {
@@ -125,87 +128,104 @@ public class DbBenchmark
             boolean freshBb = false;
             int numThreads = (Integer) flags.get(Flag.threads);
 
-            String method = null;
+            BenchmarkMethod method = null;
 
-            if (benchmark.equals("fillseq")) {
+            if (benchmark.equals("open")) {
                 freshBb = true;
-                method = "writeSeq";
+                method = this::openBench;
+                num /= 10000;
+                if (num < 1) {
+                    num = 1;
+                }
+            }
+            else if (benchmark.equals("fillseq")) {
+                freshBb = true;
+                method = this::writeSeq;
             }
             else if (benchmark.equals("fillbatch")) {
                 freshBb = true;
                 entriesPerBatch = 1000;
-                method = "writeSeq";
+                method = this::writeSeq;
             }
             else if (benchmark.equals("fillrandom")) {
                 freshBb = true;
-                method = "writeRandom";
+                method = this::writeRandom;
             }
             else if (benchmark.equals("overwrite")) {
                 freshBb = false;
-                method = "writeRandom";
+                method = this::writeRandom;
             }
             else if (benchmark.equals("fillsync")) {
                 freshBb = true;
                 num /= 1000;
                 writeOptions.sync(true);
-                method = "writeRandom";
+                method = this::writeRandom;
             }
             else if (benchmark.equals("fill100K")) {
                 freshBb = true;
                 num /= 1000;
                 valueSize = 100 * 1000;
-                method = "writeRandom";
+                method = this::writeRandom;
             }
             else if (benchmark.equals("readseq")) {
-                method = "readSequential";
+                method = this::readSequential;
             }
             else if (benchmark.equals("readreverse")) {
-                method = "readReverse";
+                method = this::readReverse;
             }
             else if (benchmark.equals("readrandom")) {
-                method = "readRandom";
+                method = this::readRandom;
+            }
+            else if (benchmark.equals("readmissing")) {
+                method = this::readMissing;
             }
             else if (benchmark.equals("seekrandom")) {
-                method = "seekRandom";
+                method = this::seekRandom;
             }
             else if (benchmark.equals("readhot")) {
-                method = "readHot";
+                method = this::readHot;
             }
             else if (benchmark.equals("readrandomsmall")) {
                 reads /= 1000;
-                method = "readRandom";
+                method = this::readRandom;
+            }
+            else if (benchmark.equals("deleteseq")) {
+                method = this::deleteSeq;
+            }
+            else if (benchmark.equals("deleterandom")) {
+                method = this::deleteRandom;
             }
             else if (benchmark.equals("readwhilewriting")) {
                 numThreads++;  // Add extra thread for writing
-                method = "readWhileWriting";
+                method = this::readWhileWriting;
             }
             else if (benchmark.equals("compact")) {
-                method = "compact";
+                method = this::compact;
             }
             else if (benchmark.equals("crc32c")) {
-                method = "crc32c";
+                method = this::crc32c;
             }
             else if (benchmark.equals("acquireload")) {
-                method = "acquireLoad";
+                method = this::acquireLoad;
             }
             else if (benchmark.equals("snappycomp")) {
                 if (Snappy.available()) {
-                    method = "snappyCompress";
+                    method = this::snappyCompress;
                 }
             }
             else if (benchmark.equals("snappyuncomp")) {
                 if (Snappy.available()) {
-                    method = "snappyUncompressDirectBuffer";
+                    method = this::snappyUncompressDirectBuffer;
                 }
             }
             else if (benchmark.equals("unsnap-array")) {
                 if (Snappy.available()) {
-                    method = "snappyUncompressArray";
+                    method = this::snappyUncompressArray;
                 }
             }
             else if (benchmark.equals("unsnap-direct")) {
                 if (Snappy.available()) {
-                    method = "snappyUncompressDirectBuffer";
+                    method = this::snappyUncompressDirectBuffer;
                 }
             }
             else if (benchmark.equals("heapprofile")) {
@@ -213,6 +233,9 @@ public class DbBenchmark
             }
             else if (benchmark.equals("stats")) {
                 printStats("leveldb.stats");
+            }
+            else if (benchmark.equals("sstables")) {
+                printStats("leveldb.sstables");
             }
             else {
                 System.err.println("Unknown benchmark: " + benchmark);
@@ -242,7 +265,7 @@ public class DbBenchmark
         db.close();
     }
 
-    private void runBenchmark(int n, String name, String method) throws Exception
+    private void runBenchmark(int n, String name, BenchmarkMethod method) throws Exception
     {
         SharedState shared = new SharedState();
 
@@ -277,50 +300,43 @@ public class DbBenchmark
 
     public void startThread(final ThreadArg arg)
     {
-        new Thread(new Runnable()
-        {
-            @Override
-            public void run()
-            {
-                SharedState shared = arg.shared;
-                ThreadState thread = arg.thread;
-                shared.mu.lock();
-                try {
-                    shared.numInitialized++;
-                    if (shared.numInitialized >= shared.total) {
-                        shared.cv.signalAll();
-                    }
-                    while (!shared.start) {
-                        shared.cv.awaitUninterruptibly();
-                    }
+        new Thread(() -> {
+            SharedState shared = arg.shared;
+            ThreadState thread = arg.thread;
+            shared.mu.lock();
+            try {
+                shared.numInitialized++;
+                if (shared.numInitialized >= shared.total) {
+                    shared.cv.signalAll();
                 }
-                finally {
-                    shared.mu.unlock();
+                while (!shared.start) {
+                    shared.cv.awaitUninterruptibly();
                 }
-                try {
-                    Method method = arg.bm.getClass().getDeclaredMethod(arg.method, ThreadState.class);
-                    method.setAccessible(true);
-                    thread.stats.start();
-                    method.invoke(arg.bm, thread);
-                }
-                catch (Exception e) {
-                    thread.stats.addMessage("ERROR " + e);
-                    e.printStackTrace();
-                }
-                finally {
-                    thread.stats.stop();
-                }
+            }
+            finally {
+                shared.mu.unlock();
+            }
+            try {
+                thread.stats.init();
+                arg.method.run(thread);
+            }
+            catch (Exception e) {
+                thread.stats.addMessage("ERROR " + e);
+                e.printStackTrace();
+            }
+            finally {
+                thread.stats.stop();
+            }
 
-                shared.mu.lock();
-                try {
-                    shared.numDone++;
-                    if (shared.numDone >= shared.total) {
-                        shared.cv.signalAll();
-                    }
+            shared.mu.lock();
+            try {
+                shared.numDone++;
+                if (shared.numDone >= shared.total) {
+                    shared.cv.signalAll();
                 }
-                finally {
-                    shared.mu.unlock();
-                }
+            }
+            finally {
+                shared.mu.unlock();
             }
         }).start();
     }
@@ -330,18 +346,18 @@ public class DbBenchmark
     {
         int kKeySize = 16;
         printEnvironment();
-        System.out.printf("Keys:       %d bytes each\n", kKeySize);
-        System.out.printf("Values:     %d bytes each (%d bytes after compression)\n",
+        System.out.printf("Keys:       %d bytes each%n", kKeySize);
+        System.out.printf("Values:     %d bytes each (%d bytes after compression)%n",
                 valueSize,
                 (int) (valueSize * compressionRatio + 0.5));
-        System.out.printf("Entries:    %d\n", num);
-        System.out.printf("RawSize:    %.1f MB (estimated)\n",
+        System.out.printf("Entries:    %d%n", num);
+        System.out.printf("RawSize:    %.1f MB (estimated)%n",
                 ((kKeySize + valueSize) * num) / 1048576.0);
-        System.out.printf("FileSize:   %.1f MB (estimated)\n",
+        System.out.printf("FileSize:   %.1f MB (estimated)%n",
                 (((kKeySize + valueSize * compressionRatio) * num)
                         / 1048576.0));
         printWarnings();
-        System.out.printf("------------------------------------------------\n");
+        System.out.printf("------------------------------------------------%n");
     }
 
     @SuppressWarnings({"InnerAssignment"})
@@ -351,7 +367,7 @@ public class DbBenchmark
         // CHECKSTYLE IGNORE check FOR NEXT 1 LINES
         assert assertsEnabled = true;  // Intentional side effect!!!
         if (assertsEnabled) {
-            System.out.printf("WARNING: Assertions are enabled; benchmarks unnecessarily slow\n");
+            System.out.printf("WARNING: Assertions are enabled; benchmarks unnecessarily slow%n");
         }
 
         // See if snappy is working by attempting to compress a compressible string
@@ -363,19 +379,19 @@ public class DbBenchmark
         catch (Exception ignored) {
         }
         if (compressedText == null) {
-            System.out.printf("WARNING: Snappy compression is not enabled\n");
+            System.out.printf("WARNING: Snappy compression is not enabled%n");
         }
         else if (compressedText.length > text.length()) {
-            System.out.printf("WARNING: Snappy compression is not effective\n");
+            System.out.printf("WARNING: Snappy compression is not effective%n");
         }
     }
 
     void printEnvironment()
             throws IOException
     {
-        System.out.printf("LevelDB:    %s\n", factory);
+        System.out.printf("LevelDB:    %s%n", factory);
 
-        System.out.printf("Date:       %tc\n", new Date());
+        System.out.printf("Date:       %tc%n", new Date());
 
         File cpuInfo = new File("/proc/cpuinfo");
         if (cpuInfo.canRead()) {
@@ -398,8 +414,8 @@ public class DbBenchmark
                     cacheSize = value;
                 }
             }
-            System.out.printf("CPU:        %d * %s\n", numberOfCpus, cpuType);
-            System.out.printf("CPUCache:   %s\n", cacheSize);
+            System.out.printf("CPU:        %d * %s%n", numberOfCpus, cpuType);
+            System.out.printf("CPUCache:   %s%n", cacheSize);
         }
     }
 
@@ -414,7 +430,6 @@ public class DbBenchmark
         if (bloomFilterBits >= 0) {
             options.filterPolicy(new BloomFilterPolicy(bloomFilterBits));
         }
-        options.cacheSize(blockCacheSize);
         if (writeBufferSize != null) {
             options.writeBufferSize(writeBufferSize);
         }
@@ -479,7 +494,7 @@ public class DbBenchmark
 
     private void readReverse(ThreadState thread)
     {
-        //To change body of created methods use File | Settings | File Templates.
+        //TODO implement readReverse
     }
 
     private void readRandom(ThreadState thread)
@@ -536,6 +551,16 @@ public class DbBenchmark
         thread.stats.addMessage(String.format("(%d of %d found)", found, num));
     }
 
+    private void deleteSeq(ThreadState thread)
+    {
+        //TODO implement deleteSeq
+    }
+
+    private void deleteRandom(ThreadState thread)
+    {
+        //TODO implement deleteRandom
+    }
+
     private void readWhileWriting(ThreadState thread)
     {
         if (thread.tid > 0) {
@@ -561,12 +586,11 @@ public class DbBenchmark
             }
 
             // Do not count any of the preceding work/delay in stats.
-            thread.stats.start();
+            thread.stats.init();
         }
     }
 
     private void compact(ThreadState thread)
-            throws IOException
     {
         db.compactRange(null, null);
     }
@@ -598,7 +622,7 @@ public class DbBenchmark
 
     private void acquireLoad(ThreadState thread)
     {
-        //To change body of created methods use File | Settings | File Templates.
+        //TODO implement acquireLoad
     }
 
     private void snappyCompress(ThreadState thread)
@@ -618,7 +642,7 @@ public class DbBenchmark
             }
             catch (IOException ignored) {
                 thread.stats.addMessage("(snappy failure)");
-                throw Throwables.propagate(ignored);
+                Throwables.propagateIfPossible(ignored, AssertionError.class);
             }
 
             thread.stats.finishedSingleOp();
@@ -643,7 +667,8 @@ public class DbBenchmark
             compressedLength = Snappy.compress(raw, 0, raw.length, compressedOutput, 0);
         }
         catch (IOException e) {
-            throw Throwables.propagate(e);
+            Throwables.propagateIfPossible(e, AssertionError.class);
+            return;
         }
         // attempt to uncompress the block
         while (bytes < 5L * 1024 * 1048576) {  // Compress 1G
@@ -671,7 +696,8 @@ public class DbBenchmark
             compressedLength = Snappy.compress(raw, 0, raw.length, compressedOutput, 0);
         }
         catch (IOException e) {
-            throw Throwables.propagate(e);
+            Throwables.propagateIfPossible(e, AssertionError.class);
+            return;
         }
 
         ByteBuffer uncompressedBuffer = ByteBuffer.allocateDirect(inputSize);
@@ -690,12 +716,18 @@ public class DbBenchmark
             }
             catch (IOException ignored) {
                 thread.stats.addMessage("(snappy failure)");
-                throw Throwables.propagate(ignored);
+                Throwables.propagateIfPossible(ignored, AssertionError.class);
+                return;
             }
 
             thread.stats.finishedSingleOp();
             thread.stats.addBytes(bytes);
         }
+    }
+
+    private void openBench(ThreadState thread) throws IOException
+    {
+        //TODO implement openBench
     }
 
     private void writeSeq(ThreadState thread) throws IOException
@@ -710,7 +742,7 @@ public class DbBenchmark
 
     private void heapProfile()
     {
-        //To change body of created methods use File | Settings | File Templates.
+        //TODO implement heapProfile
     }
 
     private void destroyDb()
@@ -726,7 +758,6 @@ public class DbBenchmark
         if (property != null) {
             System.out.print(property);
         }
-        //To change body of created methods use File | Settings | File Templates.
     }
 
     public static void main(String[] args)
@@ -1035,7 +1066,7 @@ public class DbBenchmark
         DbBenchmark bm;
         SharedState shared;
         ThreadState thread;
-        String method;
+        BenchmarkMethod method;
     }
 
     private class Stats
@@ -1052,10 +1083,10 @@ public class DbBenchmark
 
         public Stats()
         {
-            start();
+            init();
         }
 
-        void start()
+        void init()
         {
             nextReport = 100;
             lastOpFinish = start;
@@ -1159,13 +1190,13 @@ public class DbBenchmark
                 message.insert(0, " ").insert(0, rate);
             }
 
-            System.out.printf("%-12s : %11.5f micros/op;%s%s\n",
+            System.out.printf("%-12s : %11.5f micros/op;%s%s%n",
                     name,
                     seconds * 1.0e6 / done,
                     (message == null ? "" : " "),
                     message);
             if (flags.get(Flag.histogram).equals(true)) {
-                System.out.printf("Microseconds per op:\n%s\n", hist.toString());
+                System.out.printf("Microseconds per op:%n%s%n", hist.toString());
             }
         }
     }
