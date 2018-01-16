@@ -61,7 +61,7 @@ public class MergingIteratorTest
         assertEquals(mergingIterator.next().getKey(), key2);
         assertEquals(mergingIterator.next().getKey(), key4);
         assertFalse(mergingIterator.hasNext());
-        mergingIterator.seekInternal(key2);
+        mergingIterator.seek(key2);
         assertEquals(mergingIterator.next().getKey(), key2);
         assertEquals(mergingIterator.next().getKey(), key4);
         assertFalse(mergingIterator.hasNext());

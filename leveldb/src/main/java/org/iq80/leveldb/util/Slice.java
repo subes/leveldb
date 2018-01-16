@@ -542,15 +542,7 @@ public final class Slice
     public byte[] copyBytes(int index, int length)
     {
         checkPositionIndexes(index, index + length, this.length);
-        index += offset;
-        if (index == 0) {
-            return Arrays.copyOf(data, length);
-        }
-        else {
-            byte[] value = new byte[length];
-            System.arraycopy(data, index, value, 0, length);
-            return value;
-        }
+        return getBytes(index, length);
     }
 
     /**

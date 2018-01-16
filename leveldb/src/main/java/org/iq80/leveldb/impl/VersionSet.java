@@ -25,8 +25,6 @@ import com.google.common.collect.MapMaker;
 import com.google.common.collect.Maps;
 import com.google.common.io.Files;
 import org.iq80.leveldb.table.UserComparator;
-import org.iq80.leveldb.util.InternalIterator;
-import org.iq80.leveldb.util.Level0Iterator;
 import org.iq80.leveldb.util.MergingIterator;
 import org.iq80.leveldb.util.SequentialFile;
 import org.iq80.leveldb.util.Slice;
@@ -204,12 +202,16 @@ public class VersionSet
         // Level-0 files have to be merged together.  For other levels,
         // we will make a concatenating iterator per level.
         // TODO(opt): use concatenating iterator for level-0 if there is no overlap
-        List<InternalIterator> list = new ArrayList<>();
+        List<SeekingIterator<InternalKey, Slice>> list = new ArrayList<>();
         for (int which = 0; which < 2; which++) {
             List<FileMetaData> files = c.input(which);
             if (!files.isEmpty()) {
                 if (c.getLevel() + which == 0) {
-                    list.add(new Level0Iterator(tableCache, files, internalKeyComparator));
+                    ImmutableList.Builder<SeekingIterator<InternalKey, Slice>> builder = ImmutableList.builder();
+                    for (FileMetaData file : files) {
+                        builder.add(tableCache.newIterator(file));
+                    }
+                    list.add(new MergingIterator(builder.build(), internalKeyComparator));
                 }
                 else {
                     // Create concatenating iterator for the files from this level

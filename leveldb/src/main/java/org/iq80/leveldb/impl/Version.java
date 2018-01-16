@@ -21,7 +21,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableList.Builder;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
-import org.iq80.leveldb.util.InternalIterator;
 import org.iq80.leveldb.util.MergingIterator;
 import org.iq80.leveldb.util.Slice;
 
@@ -120,13 +119,12 @@ public class Version
     @Override
     public MergingIterator iterator()
     {
-        ImmutableList<InternalIterator> it = ImmutableList.copyOf(getLevelIterators());
-        return new MergingIterator(it, getInternalKeyComparator());
+        return new MergingIterator(getLevelIterators(), getInternalKeyComparator());
     }
 
-    List<InternalIterator> getLevelIterators()
+    List<SeekingIterator<InternalKey, Slice>> getLevelIterators()
     {
-        Builder<InternalIterator> builder = ImmutableList.builder();
+        Builder<SeekingIterator<InternalKey, Slice>> builder = ImmutableList.builder();
         for (Level level : levels) {
             if (!level.getFiles().isEmpty()) {
                 builder.add(level.iterator());
