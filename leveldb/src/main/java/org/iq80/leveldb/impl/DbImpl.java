@@ -687,11 +687,11 @@ public class DbImpl
             }
             finally {
                 mutex.lock();
+                if (readStats != null && current.updateStats(readStats)) {
+                    maybeScheduleCompaction();
+                }
+                current.release();
             }
-            if (readStats != null && current.updateStats(readStats)) {
-                maybeScheduleCompaction();
-            }
-            current.release();
         }
         finally {
             mutex.unlock();
