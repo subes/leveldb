@@ -1100,6 +1100,35 @@ public class DbImplTest
         assertEquals("0,0,1", filesPerLevel(db.db));
     }
 
+    @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = ".* missing files")
+    public void testMissingSSTFile() throws Exception
+    {
+        DbStringWrapper db = new DbStringWrapper(new Options(), databaseDir, EnvImpl.createEnv());
+        db.put("foo", "bar");
+        assertEquals(db.get("foo"), "bar");
+
+        // Dump the memtable to disk.
+        db.db.testCompactMemTable();
+        assertEquals(db.get("foo"), "bar");
+
+        db.close();
+        assertTrue(deleteAnSSTFile());
+        db.options.paranoidChecks(true);
+        db.reopen();
+    }
+
+    private boolean deleteAnSSTFile()
+    {
+        for (File f : databaseDir.listFiles()) {
+            Filename.FileInfo fileInfo = Filename.parseFileName(f);
+            if (fileInfo != null && fileInfo.getFileType() == Filename.FileType.TABLE) {
+                assertTrue(f.delete());
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Test
     public void testStillReadSST() throws Exception
     {

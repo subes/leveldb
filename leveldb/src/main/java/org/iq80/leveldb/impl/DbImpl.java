@@ -19,6 +19,7 @@ package org.iq80.leveldb.impl;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.FluentIterable;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DB;
@@ -54,9 +55,11 @@ import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -208,18 +211,22 @@ public class DbImpl
             // produced by an older version of leveldb.
             long minLogNumber = versions.getLogNumber();
             long previousLogNumber = versions.getPrevLogNumber();
+            final Set<Long> expected = FluentIterable.from(versions.getLiveFiles()).transform(FileMetaData::getNumber).copyInto(new HashSet<>());
             List<File> filenames = Filename.listFiles(databaseDir);
 
             List<Long> logs = new ArrayList<>();
             for (File filename : filenames) {
                 FileInfo fileInfo = Filename.parseFileName(filename);
-
-                if (fileInfo != null &&
-                        fileInfo.getFileType() == FileType.LOG &&
-                        ((fileInfo.getFileNumber() >= minLogNumber) || (fileInfo.getFileNumber() == previousLogNumber))) {
-                    logs.add(fileInfo.getFileNumber());
+                if (fileInfo != null) {
+                    expected.remove(fileInfo.getFileNumber());
+                    if (fileInfo.getFileType() == FileType.LOG &&
+                            ((fileInfo.getFileNumber() >= minLogNumber) || (fileInfo.getFileNumber() == previousLogNumber))) {
+                        logs.add(fileInfo.getFileNumber());
+                    }
                 }
             }
+
+            checkArgument(expected.isEmpty(), "%s missing files", expected.size());
 
             // Recover in the order in which the logs were generated
             VersionEdit edit = new VersionEdit();
