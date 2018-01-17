@@ -32,6 +32,6 @@ public class UnbufferedRandomInputFileTableTest
     protected Table createTable(File file, Comparator<Slice> comparator, boolean verifyChecksums, FilterPolicy filterPolicy)
             throws IOException
     {
-        return new Table(UnbufferedRandomInputFile.open(file), comparator, verifyChecksums, new LRUCache<>(8 << 5, new BlockHandleSliceWeigher()), filterPolicy);
+        return new Table(UnbufferedRandomInputFile.open(file), comparator, verifyChecksums, LRUCache.createCache(8 << 5, new BlockHandleSliceWeigher()), filterPolicy);
     }
 }

@@ -17,21 +17,37 @@
  */
 package org.iq80.leveldb.table;
 
-import org.iq80.leveldb.util.LRUCache;
-import org.iq80.leveldb.util.MMRandomInputFile;
-import org.iq80.leveldb.util.Slice;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.Comparator;
-
-public class MMRandomInputFileTableTest
-        extends TableTest
+public final class CacheKey
 {
-    @Override
-    protected Table createTable(File file, Comparator<Slice> comparator, boolean verifyChecksums, FilterPolicy filterPolicy)
-            throws IOException
+    private final long id;
+    private final BlockHandle key;
+
+    CacheKey(final long id, BlockHandle key)
     {
-        return new Table(MMRandomInputFile.open(file), comparator, verifyChecksums, LRUCache.createCache(8 << 20, new BlockHandleSliceWeigher()), filterPolicy);
+        this.id = id;
+        this.key = key;
+    }
+
+    @Override
+    public boolean equals(Object o)
+    {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        CacheKey cacheKey = (CacheKey) o;
+
+        return id == cacheKey.id && key.equals(cacheKey.key);
+    }
+
+    @Override
+    public int hashCode()
+    {
+        int result = (int) (id ^ (id >>> 32));
+        result = 31 * result + key.hashCode();
+        return result;
     }
 }

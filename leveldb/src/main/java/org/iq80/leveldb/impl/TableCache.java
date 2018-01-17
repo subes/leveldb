@@ -20,16 +20,18 @@ package org.iq80.leveldb.impl;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalListener;
 import org.iq80.leveldb.Options;
-import org.iq80.leveldb.table.BlockHandle;
 import org.iq80.leveldb.table.BlockHandleSliceWeigher;
+import org.iq80.leveldb.table.CacheKey;
 import org.iq80.leveldb.table.FilterPolicy;
 import org.iq80.leveldb.table.KeyValueFunction;
 import org.iq80.leveldb.table.Table;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.Finalizer;
+import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.InternalTableIterator;
 import org.iq80.leveldb.util.LRUCache;
 import org.iq80.leveldb.util.RandomInputFile;
@@ -45,7 +47,7 @@ public class TableCache
 {
     private final LoadingCache<Long, TableAndFile> cache;
     private final Finalizer<Table> finalizer = new Finalizer<>(1);
-    private final LRUCache<BlockHandle, Slice> blockCache;
+    private final ILRUCache<CacheKey, Slice> blockCache;
 
     public TableCache(final File databaseDir,
                       int tableCacheSize,
@@ -53,13 +55,24 @@ public class TableCache
                       final Options options, Env env)
     {
         requireNonNull(databaseDir, "databaseName is null");
-        blockCache = options.cacheSize() == 0 ? null : new LRUCache<>((int) options.cacheSize(), new BlockHandleSliceWeigher());
+        blockCache = options.cacheSize() == 0 ? null : LRUCache.createCache((int) options.cacheSize(), new BlockHandleSliceWeigher());
         cache = CacheBuilder.newBuilder()
                 .maximumSize(tableCacheSize)
                 .removalListener((RemovalListener<Long, TableAndFile>) notification -> {
                     final TableAndFile value = notification.getValue();
                     if (value != null) {
                         final Table table = value.getTable();
+                        if (notification.getCause() == RemovalCause.EXPLICIT) {
+                            //on explicit it is already know to be unused, no need to wait
+                            //blockCache do save DirectByteBuffers references (only by arrays)
+                            try {
+                                table.closer().call();
+                            }
+                            catch (Exception e) {
+                                //todo do proper exception notification
+                                Finalizer.IGNORE_FINALIZER_MONITOR.unexpectedException(e);
+                            }
+                        }
                         finalizer.addCleanup(table, table.closer());
                     }
                 })
@@ -127,7 +140,7 @@ public class TableCache
     {
         private final Table table;
 
-        private TableAndFile(File databaseDir, long fileNumber, UserComparator userComparator, Options options, LRUCache<BlockHandle, Slice> blockCache, Env env)
+        private TableAndFile(File databaseDir, long fileNumber, UserComparator userComparator, Options options, ILRUCache<CacheKey, Slice> blockCache, Env env)
                 throws IOException
         {
             final File tableFile = tableFileName(databaseDir, fileNumber);

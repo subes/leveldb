@@ -543,10 +543,14 @@ public class DbImpl
         }
         else {
             CompactionState compactionState = new CompactionState(compaction);
-            doCompactionWork(compactionState);
-            compaction.close(); //release resources
-            cleanupCompaction(compactionState);
-            deleteObsoleteFiles();
+            try {
+                doCompactionWork(compactionState);
+            }
+            finally {
+                cleanupCompaction(compactionState);
+                compaction.close(); //release resources
+                deleteObsoleteFiles();
+            }
         }
         if (compaction != null) {
             compaction.close();
@@ -565,15 +569,19 @@ public class DbImpl
         }
     }
 
-    private void cleanupCompaction(CompactionState compactionState)
+    private void cleanupCompaction(CompactionState compactionState) throws IOException
     {
         checkState(mutex.isHeldByCurrentThread());
 
         if (compactionState.builder != null) {
             compactionState.builder.abandon();
+            compactionState.builder = null;
         }
-        else {
-            checkArgument(compactionState.outfile == null);
+        if (compactionState.outfile != null) {
+            //an error as occurred but we need to release the resources!
+            compactionState.outfile.force();
+            compactionState.outfile.close();
+            compactionState.outfile = null;
         }
 
         for (FileMetaData output : compactionState.outputs) {

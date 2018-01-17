@@ -17,6 +17,7 @@
  */
 package org.iq80.leveldb.impl;
 
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 
 import java.io.File;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.util.List;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.lang.Long.parseUnsignedLong;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
@@ -60,6 +62,7 @@ public final class Filename
     {
         return makeFileName(number, "ldb");
     }
+
     /**
      * Return the deprecated name of the sstable with the specified number.
      */
@@ -131,36 +134,49 @@ public final class Filename
         //    dbname/LOG.old
         //    dbname/MANIFEST-[0-9]+
         //    dbname/[0-9]+.(log|sst|dbtmp)
-        String fileName = file.getName();
-        if ("CURRENT".equals(fileName)) {
-            return new FileInfo(FileType.CURRENT);
+        try {
+            String fileName = file.getName();
+            if ("CURRENT".equals(fileName)) {
+                return new FileInfo(FileType.CURRENT);
+            }
+            else if ("LOCK".equals(fileName)) {
+                return new FileInfo(FileType.DB_LOCK);
+            }
+            else if ("LOG".equals(fileName) || "LOG.old".equals(fileName)) {
+                return new FileInfo(FileType.INFO_LOG);
+            }
+            else if ("LOG.old".equals(fileName)) {
+                return new FileInfo(FileType.INFO_LOG);
+            }
+            else if (fileName.startsWith("MANIFEST-")) {
+                long fileNumber = parseLong(removePrefix(fileName, "MANIFEST-"));
+                return new FileInfo(FileType.DESCRIPTOR, fileNumber);
+            }
+            else if (fileName.endsWith(".log")) {
+                long fileNumber = parseLong(removeSuffix(fileName, ".log"));
+                return new FileInfo(FileType.LOG, fileNumber);
+            }
+            else if (fileName.endsWith(".sst") || fileName.endsWith(".ldb")) {
+                long fileNumber = parseLong(fileName.substring(0, fileName.lastIndexOf('.')));
+                return new FileInfo(FileType.TABLE, fileNumber);
+            }
+            else if (fileName.endsWith(".dbtmp")) {
+                long fileNumber = parseLong(removeSuffix(fileName, ".dbtmp"));
+                return new FileInfo(FileType.TEMP, fileNumber);
+            }
         }
-        else if ("LOCK".equals(fileName)) {
-            return new FileInfo(FileType.DB_LOCK);
-        }
-        else if ("LOG".equals(fileName)) {
-            return new FileInfo(FileType.INFO_LOG);
-        }
-        else if ("LOG.old".equals(fileName)) {
-            return new FileInfo(FileType.INFO_LOG);
-        }
-        else if (fileName.startsWith("MANIFEST-")) {
-            long fileNumber = Long.parseLong(removePrefix(fileName, "MANIFEST-"));
-            return new FileInfo(FileType.DESCRIPTOR, fileNumber);
-        }
-        else if (fileName.endsWith(".log")) {
-            long fileNumber = Long.parseLong(removeSuffix(fileName, ".log"));
-            return new FileInfo(FileType.LOG, fileNumber);
-        }
-        else if (fileName.endsWith(".sst")) {
-            long fileNumber = Long.parseLong(removeSuffix(fileName, ".sst"));
-            return new FileInfo(FileType.TABLE, fileNumber);
-        }
-        else if (fileName.endsWith(".dbtmp")) {
-            long fileNumber = Long.parseLong(removeSuffix(fileName, ".dbtmp"));
-            return new FileInfo(FileType.TEMP, fileNumber);
+        catch (Exception ignore) {
+            //filename is incorrect/not supported
         }
         return null;
+    }
+
+    /**
+     * Parse unsigned long string
+     */
+    private static long parseLong(String str)
+    {
+        return parseUnsignedLong(str, 10);
     }
 
     /**
@@ -206,11 +222,16 @@ public final class Filename
         return ImmutableList.copyOf(files);
     }
 
+    /**
+     * Make a new file name
+     * @param number unsigned number
+     * @param suffix file name suffix
+     * @return new file name.
+     */
     private static String makeFileName(long number, String suffix)
     {
-        checkArgument(number >= 0, "number is negative");
         requireNonNull(suffix, "suffix is null");
-        return String.format("%06d.%s", number, suffix);
+        return String.format("%s.%s", Strings.padStart(Long.toUnsignedString(number), 6, '0'), suffix);
     }
 
     private static String removePrefix(String value, String prefix)
@@ -286,7 +307,7 @@ public final class Filename
             StringBuilder sb = new StringBuilder();
             sb.append("FileInfo");
             sb.append("{fileType=").append(fileType);
-            sb.append(", fileNumber=").append(fileNumber);
+            sb.append(", fileNumber=").append(Long.toUnsignedString(fileNumber));
             sb.append('}');
             return sb.toString();
         }

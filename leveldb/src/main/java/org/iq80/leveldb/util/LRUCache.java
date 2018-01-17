@@ -18,116 +18,38 @@
 
 package org.iq80.leveldb.util;
 
+import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
 import com.google.common.cache.Weigher;
 
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Single LRU cache that can be used by multiple clients, each client can use identical key without interfering with
- * other clients.
- * <p>
- * To obtain a new cache client instance simply use {@link LRUCache#subCache(CacheLoader)}.
- * <p>
- * Try to reduce number of objects created by having only one loader per client.
+ * LRU cache with special weigher to count correctly Slice weight.
  *
  * @author Honore Vasconcelos
  */
-public final class LRUCache<K, V>
+public final class LRUCache<K, V> implements ILRUCache<K, V>
 {
-    private final AtomicLong idGenerator = new AtomicLong();
-    private final LoadingCache<CacheKey<K, V>, V> cache;
-    private final CacheLoader<CacheKey<K, V>, V> valueLoader = new CacheLoader<CacheKey<K, V>, V>()
-    {
-        @Override
-        public V load(CacheKey<K, V> key) throws Exception
-        {
-            return key.loader.load(key.key);
-        }
-    };
+    private final Cache<K, V> cache;
 
-    public LRUCache(int capacity, final Weigher<K, V> weigher)
+    private LRUCache(int capacity, final Weigher<K, V> weigher)
     {
-        this.cache = CacheBuilder.<CacheKey<K, V>, V>newBuilder()
+        this.cache = CacheBuilder.newBuilder()
                 .maximumWeight(capacity)
-                .weigher(new CacheKeyWeigher<>(weigher))
+                .weigher(weigher)
                 .concurrencyLevel(1 << 4)
-                .build(valueLoader);
+                .build();
     }
 
-    public LRUSubCache<K, V> subCache(final CacheLoader<K, V> loader)
+    public static <K, V> ILRUCache<K, V> createCache(int capacity, final Weigher<K, V> weigher)
     {
-        return new LRUSubCache<K, V>()
-        {
-            private final long id = idGenerator.incrementAndGet();
-
-            @Override
-            public V load(K k) throws ExecutionException
-            {
-                return cache.get(new CacheKey<>(id, k, loader));
-            }
-        };
+        return new LRUCache<>(capacity, weigher);
     }
 
-    public interface LRUSubCache<K, V>
+    public V load(final K key, Callable<V> loader) throws ExecutionException
     {
-        V load(K key) throws ExecutionException;
-    }
-
-    public static final class CacheKey<K, M>
-    {
-        private final long id;
-        private final K key;
-        //not part of the key, but avoid creating objects for each key search
-        private final CacheLoader<K, M> loader;
-
-        CacheKey(final long id, K key, CacheLoader<K, M> loader)
-        {
-            this.id = id;
-            this.key = key;
-            this.loader = loader;
-        }
-
-        @Override
-        public boolean equals(Object o)
-        {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-
-            CacheKey<?, ?> cacheKey = (CacheKey<?, ?>) o;
-
-            return id == cacheKey.id && key.equals(cacheKey.key);
-        }
-
-        @Override
-        public int hashCode()
-        {
-            int result = (int) (id ^ (id >>> 32));
-            result = 31 * result + key.hashCode();
-            return result;
-        }
-    }
-
-    private static final class CacheKeyWeigher<K, V> implements Weigher<CacheKey<K, V>, V>
-    {
-        private final Weigher<K, V> weigher;
-
-        CacheKeyWeigher(Weigher<K, V> weigher)
-        {
-            this.weigher = weigher;
-        }
-
-        @Override
-        public int weigh(CacheKey<K, V> key, V value)
-        {
-            return 32 + weigher.weigh(key.key, value);
-        }
+        return cache.get(key, loader);
     }
 }

@@ -15,23 +15,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.table;
+package org.iq80.leveldb.util;
 
-import org.iq80.leveldb.util.LRUCache;
-import org.iq80.leveldb.util.MMRandomInputFile;
-import org.iq80.leveldb.util.Slice;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.Comparator;
-
-public class MMRandomInputFileTableTest
-        extends TableTest
+@FunctionalInterface
+public interface ILRUCache<K, V>
 {
-    @Override
-    protected Table createTable(File file, Comparator<Slice> comparator, boolean verifyChecksums, FilterPolicy filterPolicy)
-            throws IOException
-    {
-        return new Table(MMRandomInputFile.open(file), comparator, verifyChecksums, LRUCache.createCache(8 << 20, new BlockHandleSliceWeigher()), filterPolicy);
-    }
+    /**
+     * Get cached valued by key or load and cache loaded value.
+     *
+     * @param key cache key
+     * @param loader key value loader
+     * @return loaded/saved value
+     * @throws ExecutionException if load has any exception.
+     */
+    V load(final K key, Callable<V> loader) throws ExecutionException;
 }

@@ -18,9 +18,8 @@
 package org.iq80.leveldb.table;
 
 import com.google.common.base.Throwables;
-import com.google.common.cache.CacheLoader;
 import org.iq80.leveldb.impl.SeekingIterable;
-import org.iq80.leveldb.util.LRUCache;
+import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
@@ -34,6 +33,7 @@ import java.nio.charset.Charset;
 import java.util.Comparator;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.Objects.requireNonNull;
@@ -43,19 +43,21 @@ public final class Table
         implements SeekingIterable<Slice, Slice>
 {
     private static final Charset CHARSET = Charset.forName("UTF-8");
+    private static final AtomicLong ID_GENERATOR = new AtomicLong();
+    private final long id = ID_GENERATOR.incrementAndGet();
     private final Comparator<Slice> comparator;
     private final boolean verifyChecksums;
     private final Block indexBlock;
     private final BlockHandle metaindexBlockHandle;
     private final RandomInputFile source;
-    private final LRUCache.LRUSubCache<BlockHandle, Slice> blockCache;
+    private final ILRUCache<CacheKey, Slice> blockCache;
     private final FilterBlockReader filter;
 
-    public Table(RandomInputFile source, Comparator<Slice> comparator, boolean verifyChecksum, LRUCache<BlockHandle, Slice> blockCache, final FilterPolicy filterPolicy)
+    public Table(RandomInputFile source, Comparator<Slice> comparator, boolean verifyChecksum, ILRUCache<CacheKey, Slice> blockCache, final FilterPolicy filterPolicy)
             throws IOException
     {
         this.source = source;
-        this.blockCache = cacheForTable(blockCache);
+        this.blockCache = blockCache;
         requireNonNull(source, "source is null");
         long size = source.size();
         checkArgument(size >= Footer.ENCODED_LENGTH, "File is corrupt: size must be at least %s bytes", Footer.ENCODED_LENGTH);
@@ -96,36 +98,6 @@ public final class Table
         return new FilterBlockReader(filterPolicy, filterBlock);
     }
 
-    /**
-     * Get reference to a new sub cache to current table.
-     *
-     * @param blockCache global cache
-     * @return cache scoped to current table
-     */
-    private LRUCache.LRUSubCache<BlockHandle, Slice> cacheForTable(LRUCache<BlockHandle, Slice> blockCache)
-    {
-        if (blockCache == null) {
-            return k -> {
-                try {
-                    return readRawBlock(k);
-                }
-                catch (IOException e) {
-                    throw new ExecutionException(e);
-                }
-            };
-        }
-        else {
-            return blockCache.subCache(new CacheLoader<BlockHandle, Slice>()
-            {
-                @Override
-                public Slice load(BlockHandle key) throws Exception
-                {
-                    return readRawBlock(key);
-                }
-            });
-        }
-    }
-
     @Override
     public TableIterator iterator()
     {
@@ -154,7 +126,7 @@ public final class Table
             throws IOException
     {
         try {
-            final Slice rawBlock = blockCache.load(blockHandle);
+            final Slice rawBlock = blockCache == null ? readRawBlock(blockHandle) : blockCache.load(new CacheKey(id, blockHandle), () -> readRawBlock(blockHandle));
             return new Block(rawBlock, comparator);
         }
         catch (ExecutionException e) {

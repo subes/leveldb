@@ -53,8 +53,11 @@ public abstract class AbstractSeekingIterator<K, V>
     @Override
     public final Entry<K, V> next()
     {
-        if (!hasNext()) {
-            throw new NoSuchElementException();
+        if (nextElement == null) {
+            nextElement = getNextElement();
+            if (nextElement == null) {
+                throw new NoSuchElementException();
+            }
         }
 
         Entry<K, V> result = nextElement;
@@ -65,8 +68,11 @@ public abstract class AbstractSeekingIterator<K, V>
     @Override
     public final Entry<K, V> peek()
     {
-        if (!hasNext()) {
-            throw new NoSuchElementException();
+        if (nextElement == null) {
+            nextElement = getNextElement();
+            if (nextElement == null) {
+                throw new NoSuchElementException();
+            }
         }
 
         return nextElement;

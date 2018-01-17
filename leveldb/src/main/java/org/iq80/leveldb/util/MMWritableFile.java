@@ -81,13 +81,8 @@ public class MMWritableFile implements WritableFile
 
     private MappedByteBuffer openNewMap(int fileOffset, int sizeToGrow) throws IOException
     {
-        FileChannel cha = null;
-        try {
-            cha = openChannel();
+        try (FileChannel cha = openChannel()) {
             return cha.map(FileChannel.MapMode.READ_WRITE, fileOffset, sizeToGrow);
-        }
-        finally {
-            Closeables.closeQuietly(cha);
         }
     }
 
@@ -104,19 +99,17 @@ public class MMWritableFile implements WritableFile
     @Override
     public void force() throws IOException
     {
+        if (mappedByteBuffer != null) {
+            mappedByteBuffer.force();
+        }
     }
 
     @Override
     public void close() throws IOException
     {
         destroyMappedByteBuffer();
-        FileChannel cha = null;
-        try {
-            cha = openChannel();
+        try (FileChannel cha = openChannel()) {
             cha.truncate(fileOffset);
-        }
-        finally {
-            Closeables.closeQuietly(cha);
         }
     }
 

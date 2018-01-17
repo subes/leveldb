@@ -34,6 +34,7 @@ import org.iq80.leveldb.impl.ValueType;
 import org.iq80.leveldb.util.AbstractSeekingIterator;
 import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.FileUtils;
+import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.LRUCache;
 import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
@@ -319,7 +320,7 @@ public abstract class TableTest
 
             // Open the table
             StringSource source = new StringSource(sink.content);
-            LRUCache<BlockHandle, Slice> blockCache = new LRUCache<>(options.cacheSize() > 0 ? (int) options.cacheSize() : 8 << 20, new BlockHandleSliceWeigher());
+            ILRUCache<CacheKey, Slice> blockCache = LRUCache.createCache(options.cacheSize() > 0 ? (int) options.cacheSize() : 8 << 20, new BlockHandleSliceWeigher());
             table = new Table(source, comp, options.verifyChecksums(), blockCache, (FilterPolicy) options.filterPolicy());
         }
 

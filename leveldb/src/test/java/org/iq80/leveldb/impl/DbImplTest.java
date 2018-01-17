@@ -1101,6 +1101,56 @@ public class DbImplTest
     }
 
     @Test
+    public void testStillReadSST() throws Exception
+    {
+        DbStringWrapper db = new DbStringWrapper(new Options(), databaseDir, EnvImpl.createEnv());
+        db.put("foo", "bar");
+        assertEquals("bar", db.get("foo"));
+
+        // Dump the memtable to disk.
+        db.db.testCompactMemTable();
+        assertEquals("bar", db.get("foo"));
+        db.close();
+        assertTrue(renameLDBToSST() > 0);
+        Options options = new Options();
+        options.paranoidChecks(true);
+        options.errorIfExists(false);
+        db.reopen();
+        assertEquals("bar", db.get("foo"));
+    }
+
+    // Returns number of files renamed.
+    private int renameLDBToSST()
+    {
+        int filesRenamed = 0;
+        for (File f : databaseDir.listFiles()) {
+            Filename.FileInfo fileInfo = Filename.parseFileName(f);
+            if (fileInfo != null && fileInfo.getFileType() == Filename.FileType.TABLE) {
+                assertTrue(f.renameTo(new File(f.getParent(), Filename.sstTableFileName(fileInfo.getFileNumber()))));
+                filesRenamed++;
+            }
+        }
+        return filesRenamed;
+    }
+
+    @Test
+    public void testFilesDeletedAfterCompaction() throws Exception
+    {
+        File counting = new File(databaseDir, "counting");
+        DbStringWrapper db = new DbStringWrapper(new Options(), counting, EnvImpl.createEnv());
+        db.put("foo", "v2");
+        db.compact("a", "z");
+        int files = counting.listFiles().length;
+        for (int i = 0; i < 10; i++) {
+            db.put("foo", "v2");
+            System.gc();
+            System.gc();
+            db.compact("a", "z");
+        }
+        assertEquals(counting.listFiles().length, files);
+    }
+
+    @Test
     public void testBloomFilter() throws Exception
     {
         SpecialEnv env = new SpecialEnv(EnvImpl.createEnv());
