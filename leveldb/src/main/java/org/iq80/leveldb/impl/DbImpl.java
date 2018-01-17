@@ -18,6 +18,7 @@
 package org.iq80.leveldb.impl;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DB;
@@ -31,7 +32,6 @@ import org.iq80.leveldb.WriteBatch;
 import org.iq80.leveldb.WriteOptions;
 import org.iq80.leveldb.impl.Filename.FileInfo;
 import org.iq80.leveldb.impl.Filename.FileType;
-import org.iq80.leveldb.impl.MemTable.MemTableIterator;
 import org.iq80.leveldb.impl.WriteBatchImpl.Handler;
 import org.iq80.leveldb.table.BytewiseComparator;
 import org.iq80.leveldb.table.CustomUserComparator;
@@ -932,13 +932,15 @@ public class DbImpl
         mutex.lock();
         try {
             // merge together the memTable, immutableMemTable, and tables in version set
-            MemTableIterator iterator = null;
+            ImmutableList.Builder<SeekingIterator<InternalKey, Slice>> builder = ImmutableList.builder();
+            builder.add(memTable.iterator());
             if (immutableMemTable != null) {
-                iterator = immutableMemTable.iterator();
+                builder.add(immutableMemTable.iterator());
             }
             Version current = versions.getCurrent();
             current.retain();
-            return new DbIterator(memTable.iterator(), iterator, current.getLevelIterators(), internalKeyComparator, () -> {
+            builder.addAll(current.getLevelIterators());
+            return new DbIterator(new MergingIterator(builder.build(), internalKeyComparator), () -> {
                 mutex.lock();
                 try {
                     current.release();

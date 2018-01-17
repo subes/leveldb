@@ -500,15 +500,18 @@ public class DbBenchmark
     private void readRandom(ThreadState thread)
     {
         int found = 0;
+        long bytes = 0;
         for (int i = 0; i < reads; i++) {
             byte[] key = formatNumber(thread.rand.nextInt(num));
             byte[] value = db.get(key);
             if (value != null) {
-                found++;
+                found ++;
+                bytes += key.length + value.length;
             }
             thread.stats.finishedSingleOp();
         }
         thread.stats.addMessage(String.format("(%d of %d found)", found, num));
+        thread.stats.addBytes(bytes);
     }
 
     private void readMissing(ThreadState thread)
