@@ -315,7 +315,7 @@ public class DbImplTest
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
         db.put("foo", "v1");
-        db.compact("a", "z");
+        db.compactRange("a", "z");
         assertEquals(db.get("foo"), "v1");
         db.put("foo", "v2");
         assertEquals(db.get("foo"), "v2");
@@ -329,11 +329,11 @@ public class DbImplTest
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
         db.put("a", "va");
-        db.compact("a", "b");
+        db.compactRange("a", "b");
         db.put("x", "vx");
-        db.compact("x", "y");
+        db.compactRange("x", "y");
         db.put("f", "vf");
-        db.compact("f", "g");
+        db.compactRange("f", "g");
 
         assertEquals(db.get("a"), "va");
         assertEquals(db.get("f"), "vf");
@@ -627,7 +627,7 @@ public class DbImplTest
         }
         db.put("C", "vc");
         db.compactMemTable();
-        db.compactRange(0, "A", "Z");
+        db.testCompactRange(0, null, null);
 
         // Make sparse update
         db.put("A", "va2");
@@ -638,9 +638,9 @@ public class DbImplTest
         // Compactions should not cause us to create a situation where
         // a file overlaps too much data at the next level.
         assertTrue(db.getMaxNextLevelOverlappingBytes() <= 20 * 1048576);
-        db.compactRange(0, "", "z");
+        db.testCompactRange(0, null, null);
         assertTrue(db.getMaxNextLevelOverlappingBytes() <= 20 * 1048576);
-        db.compactRange(1, "", "z");
+        db.testCompactRange(1, null, null);
         assertTrue(db.getMaxNextLevelOverlappingBytes() <= 20 * 1048576);
     }
 
@@ -1168,13 +1168,13 @@ public class DbImplTest
         File counting = new File(databaseDir, "counting");
         DbStringWrapper db = new DbStringWrapper(new Options(), counting, EnvImpl.createEnv());
         db.put("foo", "v2");
-        db.compact("a", "z");
+        db.compactRange("a", "z");
         int files = counting.listFiles().length;
         for (int i = 0; i < 10; i++) {
             db.put("foo", "v2");
             System.gc();
             System.gc();
-            db.compact("a", "z");
+            db.compactRange("a", "z");
         }
         assertEquals(counting.listFiles().length, files);
     }
@@ -1193,7 +1193,7 @@ public class DbImplTest
         for (int i = 0; i < n; i++) {
             db.put(key(i), key(i));
         }
-        db.compact("a", "z");
+        db.compactRange("a", "z");
         for (int i = 0; i < n; i += 100) {
             db.put(key(i), key(i));
         }
@@ -1513,7 +1513,7 @@ public class DbImplTest
 
         public void compactMemTable()
         {
-            db.flushMemTable();
+            db.testCompactMemTable();
         }
 
         public void compactRange(String start, String limit)
@@ -1523,12 +1523,12 @@ public class DbImplTest
 
         public void compactRange(int level, String start, String limit)
         {
-            db.compactRange(level, start == null ? null : Slices.copiedBuffer(start, UTF_8), limit == null ? null : Slices.copiedBuffer(limit, UTF_8));
+            db.testCompactRange(level, start == null ? null : Slices.copiedBuffer(start, UTF_8), limit == null ? null : Slices.copiedBuffer(limit, UTF_8));
         }
 
-        public void compact(String start, String limit)
+        public void testCompactRange(int level, String start, String limit)
         {
-            db.compactRange(Slices.copiedBuffer(start, UTF_8).getBytes(), Slices.copiedBuffer(limit, UTF_8).getBytes());
+            db.testCompactRange(level, start == null ? null : Slices.copiedBuffer(start, UTF_8), limit == null ? null : Slices.copiedBuffer(limit, UTF_8));
         }
 
         public int numberOfFilesInLevel(int level)
