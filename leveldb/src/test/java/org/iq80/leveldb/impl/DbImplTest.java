@@ -1513,7 +1513,7 @@ public class DbImplTest
 
         public void compactMemTable()
         {
-            db.flushMemTable();
+            db.testCompactMemTable();
         }
 
         public void compactRange(String start, String limit)
@@ -1523,7 +1523,7 @@ public class DbImplTest
 
         public void compactRange(int level, String start, String limit)
         {
-            db.compactRange(level, start == null ? null : Slices.copiedBuffer(start, UTF_8), limit == null ? null : Slices.copiedBuffer(limit, UTF_8));
+            db.testCompactRange(level, start == null ? null : Slices.copiedBuffer(start, UTF_8), limit == null ? null : Slices.copiedBuffer(limit, UTF_8));
         }
 
         public void compact(String start, String limit)
