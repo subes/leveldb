@@ -1093,6 +1093,49 @@ public class DbImplTest
         assertEquals("0,0,1", db.filesPerLevel());
     }
 
+    @Test
+    public void testManifestWriteError() throws Exception
+    {
+        // Test for the following problem:
+        // (a) Compaction produces file F
+        // (b) Log record containing F is written to MANIFEST file, but Sync() fails
+        // (c) GC deletes F
+        // (d) After reopening DB, reads fail since deleted F is named in log record
+
+        // We iterate twice.  In the second iteration, everything is the
+        // same except the log record never makes it to the MANIFEST file.
+        SpecialEnv specialEnv = new SpecialEnv(EnvImpl.createEnv());
+        for (int iter = 0; iter < 2; iter++) {
+            AtomicBoolean errorType = (iter == 0)
+                    ? specialEnv.manifestSyncError
+                    : specialEnv.manifestWriteError;
+
+            // Insert foo=>bar mapping
+            Options options = new Options();
+            options.createIfMissing(true);
+            options.errorIfExists(false);
+            DbStringWrapper db = new DbStringWrapper(options, databaseDir, specialEnv);
+            db.put("foo", "bar");
+            assertEquals(db.get("foo"), "bar");
+
+            // Memtable compaction (will succeed)
+            db.testCompactMemTable();
+            assertEquals(db.get("foo"), "bar");
+            int last = DbConstants.MAX_MEM_COMPACT_LEVEL;
+            assertEquals(db.numberOfFilesInLevel(last), 1);   // foo=>bar is now in last level
+
+            // Merging compaction (will fail)
+            errorType.set(true);
+            db.testCompactRange(last, null, null);  // Should fail
+            assertEquals(db.get("foo"), "bar");
+
+            // Recovery: should not lose data
+            errorType.set(false);
+            db.reopen();
+            assertEquals(db.get("foo"), "bar");
+        }
+    }
+
     @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = ".* missing files")
     public void testMissingSSTFile() throws Exception
     {
