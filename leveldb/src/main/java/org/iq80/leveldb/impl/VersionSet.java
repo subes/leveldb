@@ -24,6 +24,7 @@ import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.MapMaker;
 import com.google.common.collect.Maps;
 import com.google.common.io.Files;
+import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.MergingIterator;
 import org.iq80.leveldb.util.SequentialFile;
@@ -62,7 +63,7 @@ public class VersionSet
 
     // Maximum bytes of overlaps in grandparent (i.e., level+2) before we
     // stop building a single file in a level.level+1 compaction.
-    public static final long MAX_GRAND_PARENT_OVERLAP_BYTES = 10 * TARGET_FILE_SIZE;
+    public static final long MAX_GRAND_PARENT_OVERLAP_BYTES = 10L * TARGET_FILE_SIZE;
 
     private final AtomicLong nextFileNumber = new AtomicLong(2);
     private long manifestFileNumber = 1;
@@ -131,7 +132,7 @@ public class VersionSet
             t.release();
         }
 
-        Set<Version> versions = activeVersions.keySet();
+        //Set<Version> versions = activeVersions.keySet();
         // TODO:
         // log("DB closed with "+versions.size()+" open snapshots. This could mean your application has a resource leak.");
     }
@@ -390,7 +391,7 @@ public class VersionSet
                 problems.add("Descriptor does not contain a last-sequence-number entry");
             }
             if (!problems.isEmpty()) {
-                throw new RuntimeException("Corruption: \n\t" + Joiner.on("\n\t").join(problems));
+                throw new DBException("Corruption: \n\t" + Joiner.on("\n\t").join(problems));
             }
 
             if (prevLogNumber == null) {
@@ -552,8 +553,7 @@ public class VersionSet
             checkState(!levelInputs.isEmpty());
         }
 
-        Compaction compaction = setupOtherInputs(level, levelInputs);
-        return compaction;
+        return setupOtherInputs(level, levelInputs);
     }
 
     private Compaction setupOtherInputs(int level, List<FileMetaData> levelInputs)
@@ -869,11 +869,11 @@ public class VersionSet
         private static class LevelState
         {
             private final SortedSet<FileMetaData> addedFiles;
-            private final Set<Long> deletedFiles = new HashSet<Long>();
+            private final Set<Long> deletedFiles = new HashSet<>();
 
             public LevelState(InternalKeyComparator internalKeyComparator)
             {
-                addedFiles = new TreeSet<FileMetaData>(new FileMetaDataBySmallestKey(internalKeyComparator));
+                addedFiles = new TreeSet<>(new FileMetaDataBySmallestKey(internalKeyComparator));
             }
 
             @Override

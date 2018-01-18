@@ -18,6 +18,7 @@
 package org.iq80.leveldb.impl;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.FluentIterable;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
@@ -51,7 +52,6 @@ import org.iq80.leveldb.util.WritableFile;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
@@ -155,15 +155,10 @@ public class DbImpl
 
         ThreadFactory compactionThreadFactory = new ThreadFactoryBuilder()
                 .setNameFormat("leveldb-compaction-%s")
-                .setUncaughtExceptionHandler(new UncaughtExceptionHandler()
-                {
-                    @Override
-                    public void uncaughtException(Thread t, Throwable e)
-                    {
-                        // todo need a real UncaughtExceptionHandler
-                        System.out.printf("%s%n", t);
-                        e.printStackTrace();
-                    }
+                .setUncaughtExceptionHandler((t, e) -> {
+                    // todo need a real UncaughtExceptionHandler
+                    System.out.printf("%s%n", t);
+                    e.printStackTrace();
                 })
                 .build();
         compactionExecutor = Executors.newSingleThreadExecutor(compactionThreadFactory);
@@ -309,7 +304,7 @@ public class DbImpl
             matcher = Pattern.compile("num-files-at-level(\\d+)")
                     .matcher(key);
             if (matcher.matches()) {
-                final int level = Integer.valueOf(matcher.group(1));
+                final int level = Integer.parseInt(matcher.group(1));
                 return String.valueOf(versions.numberOfFilesInLevel(level));
             }
             matcher = Pattern.compile("stats")
@@ -323,7 +318,7 @@ public class DbImpl
                     int files = versions.numberOfFilesInLevel(level);
                     if (stats[level].micros > 0 || files > 0) {
                         stringBuilder.append(String.format(
-                                "%3d %8d %8.0f %9.0f %8.0f %9.0f\n",
+                                "%3d %8d %8.0f %9.0f %8.0f %9.0f%n",
                                 level,
                                 files,
                                 versions.numberOfBytesInLevel(level) / 1048576.0,
@@ -398,53 +393,6 @@ public class DbImpl
         }
     }
 
-    public void flushMemTable()
-    {
-        mutex.lock();
-        try {
-            // force compaction
-            writeInternal(null, new WriteOptions());
-
-            // todo bg_error code
-            while (immutableMemTable != null) {
-                backgroundCondition.awaitUninterruptibly();
-            }
-            checkBackgroundException();
-        }
-        finally {
-            mutex.unlock();
-        }
-    }
-
-    public void compactRange(int level, Slice start, Slice end)
-    {
-        checkArgument(level >= 0, "level is negative");
-        checkArgument(level + 1 < DbConstants.NUM_LEVELS, "level is greater than or equal to %s", DbConstants.NUM_LEVELS);
-        requireNonNull(start, "start is null");
-        requireNonNull(end, "end is null");
-
-        mutex.lock();
-        try {
-            while (this.manualCompaction != null) {
-                backgroundCondition.awaitUninterruptibly();
-            }
-            ManualCompaction manualCompaction = new ManualCompaction(level,
-                    new InternalKey(start, SequenceNumber.MAX_SEQUENCE_NUMBER, VALUE),
-                    new InternalKey(end, 0, DELETION));
-            this.manualCompaction = manualCompaction;
-
-            maybeScheduleCompaction();
-
-            while (this.manualCompaction == manualCompaction) {
-                backgroundCondition.awaitUninterruptibly();
-            }
-        }
-        finally {
-            mutex.unlock();
-        }
-
-    }
-
     private void maybeScheduleCompaction()
     {
         checkState(mutex.isHeldByCurrentThread());
@@ -468,7 +416,7 @@ public class DbImpl
         }
     }
 
-    public void checkBackgroundException()
+    private void checkBackgroundException()
     {
         Throwable e = backgroundException;
         if (e != null) {
@@ -498,9 +446,7 @@ public class DbImpl
         }
         catch (Throwable throwable) {
             backgroundException = throwable;
-            if (throwable instanceof Error) {
-                throw (Error) throwable;
-            }
+            Throwables.throwIfInstanceOf(throwable, Error.class);
         }
         finally {
             try {
@@ -770,7 +716,7 @@ public class DbImpl
         try {
             writers.offerLast(w);
             while (!w.done && writers.peekFirst() != w) {
-                w.await();
+                w.backgroundCondition.awaitUninterruptibly();
             }
             if (w.done) {
                 return null;
@@ -792,25 +738,23 @@ public class DbImpl
                 // and protects against concurrent loggers and concurrent writes
                 // into mem_.
                 // log and memtable are modified by makeRoomForWrite
-                {
-                    mutex.unlock();
+                mutex.unlock();
+                try {
+                    // Log write
+                    Slice record = writeWriteBatch(updates, sequenceBegin);
                     try {
-                        // Log write
-                        Slice record = writeWriteBatch(updates, sequenceBegin);
-                        try {
-                            log.addRecord(record, options.sync());
-                        }
-                        catch (IOException e) {
-                            throw new DBException(e);
-                        }
+                        log.addRecord(record, options.sync());
+                    }
+                    catch (IOException e) {
+                        throw new DBException(e);
+                    }
 
-                        // Update memtable
-                        //this.memTable is modified by makeRoomForWrite
-                        updates.forEach(new InsertIntoHandler(this.memTable, sequenceBegin));
-                    }
-                    finally {
-                        mutex.lock();
-                    }
+                    // Update memtable
+                    //this.memTable is modified by makeRoomForWrite
+                    updates.forEach(new InsertIntoHandler(this.memTable, sequenceBegin));
+                }
+                finally {
+                    mutex.lock();
                 }
                 if (updates == tmpBatch) {
                     tmpBatch.clear();
@@ -1011,7 +955,7 @@ public class DbImpl
                 }
                 catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new RuntimeException(e);
+                    throw new DBException(e);
                 }
                 finally {
                     mutex.lock();
@@ -1043,7 +987,7 @@ public class DbImpl
                     log.close();
                 }
                 catch (IOException e) {
-                    throw new RuntimeException("Unable to close log file " + log, e);
+                    throw new DBException("Unable to close log file " + log, e);
                 }
 
                 // open a new log
@@ -1052,7 +996,7 @@ public class DbImpl
                     this.log = Logs.createLogWriter(new File(databaseDir, Filename.logFileName(logNumber)), logNumber, env);
                 }
                 catch (IOException e) {
-                    throw new RuntimeException("Unable to open new log file " +
+                    throw new DBException("Unable to open new log file " +
                             new File(databaseDir, Filename.logFileName(logNumber)).getAbsoluteFile(), e);
                 }
 
@@ -1126,7 +1070,7 @@ public class DbImpl
         // Note that if file size is zero, the file has been deleted and
         // should not be added to the manifest.
         int level = 0;
-        if (meta != null && meta.getFileSize() > 0) {
+        if (meta.getFileSize() > 0) {
             Slice minUserKey = meta.getSmallest().getUserKey();
             Slice maxUserKey = meta.getLargest().getUserKey();
             if (base != null) {
@@ -1134,7 +1078,7 @@ public class DbImpl
             }
             edit.addFile(level, meta);
         }
-        this.stats[level].Add(env.nowMicros() - startMicros, 0, meta.getFileSize());
+        this.stats[level].add(env.nowMicros() - startMicros, 0, meta.getFileSize());
     }
 
     private FileMetaData buildTable(SeekingIterable<InternalKey, Slice> data, long fileNumber)
@@ -1163,7 +1107,9 @@ public class DbImpl
             }
 
             if (smallest == null) {
-                return null;
+                //empty iterator
+                file.delete();
+                return new FileMetaData(fileNumber, 0, null, null);
             }
             FileMetaData fileMetaData = new FileMetaData(fileNumber, file.length(), smallest, largest);
 
@@ -1295,7 +1241,7 @@ public class DbImpl
                 bytesWritten += compactionState.outputs.get(i).getFileSize();
             }
             mutex.lock();
-            this.stats[compactionState.compaction.getLevel() + 1].Add(micros, bytesRead, bytesWritten);
+            this.stats[compactionState.compaction.getLevel() + 1].add(micros, bytesRead, bytesWritten);
         }
         installCompactionResults(compactionState);
     }
@@ -1499,7 +1445,7 @@ public class DbImpl
             this.bytesWritten = 0;
         }
 
-        public void Add(long micros, long bytesRead, long bytesWritten)
+        public void add(long micros, long bytesRead, long bytesWritten)
         {
             this.micros += micros;
             this.bytesRead += bytesRead;
@@ -1591,22 +1537,17 @@ public class DbImpl
     public void suspendCompactions()
             throws InterruptedException
     {
-        compactionExecutor.execute(new Runnable()
-        {
-            @Override
-            public void run()
-            {
-                try {
-                    synchronized (suspensionMutex) {
-                        suspensionCounter++;
-                        suspensionMutex.notifyAll();
-                        while (suspensionCounter > 0 && !compactionExecutor.isShutdown()) {
-                            suspensionMutex.wait(500);
-                        }
+        compactionExecutor.execute(() -> {
+            try {
+                synchronized (suspensionMutex) {
+                    suspensionCounter++;
+                    suspensionMutex.notifyAll();
+                    while (suspensionCounter > 0 && !compactionExecutor.isShutdown()) {
+                        suspensionMutex.wait(500);
                     }
                 }
-                catch (InterruptedException e) {
-                }
+            }
+            catch (InterruptedException e) {
             }
         });
         synchronized (suspensionMutex) {
@@ -1715,11 +1656,6 @@ public class DbImpl
             this.batch = batch;
             this.sync = sync;
             this.backgroundCondition = backgroundCondition;
-        }
-
-        public void await()
-        {
-            backgroundCondition.awaitUninterruptibly();
         }
 
         public void signal()

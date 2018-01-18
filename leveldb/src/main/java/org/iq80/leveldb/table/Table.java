@@ -18,6 +18,7 @@
 package org.iq80.leveldb.table;
 
 import com.google.common.base.Throwables;
+import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.impl.SeekingIterable;
 import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.RandomInputFile;
@@ -117,7 +118,7 @@ public final class Table
             dataBlock = readBlock(blockHandle);
         }
         catch (IOException e) {
-            throw Throwables.propagate(e);
+            throw new DBException(e);
         }
         return dataBlock;
     }

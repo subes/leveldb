@@ -22,6 +22,7 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalListener;
+import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.table.BlockHandleSliceWeigher;
 import org.iq80.leveldb.table.CacheKey;
@@ -120,7 +121,7 @@ public class TableCache
             if (e.getCause() != null) {
                 cause = e.getCause();
             }
-            throw new RuntimeException("Could not open table " + number, cause);
+            throw new DBException("Could not open table " + number, cause);
         }
         return table;
     }

@@ -79,7 +79,7 @@ import static org.testng.Assert.fail;
 public class DbImplTest
 {
     // You can set the STRESS_FACTOR system property to make the tests run more iterations.
-    public static final double STRESS_FACTOR = Double.parseDouble(System.getProperty("STRESS_FACTOR", "1"));
+    private static final double STRESS_FACTOR = Double.parseDouble(System.getProperty("STRESS_FACTOR", "1"));
 
     private static final String DOES_NOT_EXIST_FILENAME = "/foo/bar/doowop/idontexist";
     private static final String DOES_NOT_EXIST_FILENAME_PATTERN = ".foo.bar.doowop.idontexist";
@@ -119,9 +119,8 @@ public class DbImplTest
         Options options = new Options();
         options.maxOpenFiles(50);
         options.createIfMissing(true);
-        final DbImpl db = new DbImpl(options, this.databaseDir, EnvImpl.createEnv());
         ExecutorService ex = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 4);
-        try {
+        try (DbImpl db = new DbImpl(options, this.databaseDir, EnvImpl.createEnv())) {
             final int numEntries = 1000000;
             final int growValueBy = 10;
             final CountDownLatch segmentsToPutEnd = new CountDownLatch(numEntries / 100);
@@ -130,26 +129,21 @@ public class DbImplTest
             //dispatch writes
             for (int i = 0; i < numEntries; i += segmentSize) {
                 final int finalI = i;
-                ex.submit(new Runnable()
-                {
-                    @Override
-                    public void run()
-                    {
-                        final int i2 = finalI + segmentSize;
-                        for (int j = finalI; j < i2; j++) {
-                            final BigInteger bigInteger = BigInteger.valueOf(j);
-                            final byte[] value = bigInteger.toByteArray();
-                            final byte[] bytes = new byte[growValueBy + value.length];
-                            for (int k = 0; k < growValueBy; k += value.length) {
-                                System.arraycopy(value, 0, bytes, k, value.length);
-                            }
-                            db.put(value, bytes);
-                            if (random.nextInt(100) < 2) {
-                                Thread.yield();
-                            }
+                ex.submit(() -> {
+                    final int i2 = finalI + segmentSize;
+                    for (int j = finalI; j < i2; j++) {
+                        final BigInteger bigInteger = BigInteger.valueOf(j);
+                        final byte[] value = bigInteger.toByteArray();
+                        final byte[] bytes = new byte[growValueBy + value.length];
+                        for (int k = 0; k < growValueBy; k += value.length) {
+                            System.arraycopy(value, 0, bytes, k, value.length);
                         }
-                        segmentsToPutEnd.countDown();
+                        db.put(value, bytes);
+                        if (random.nextInt(100) < 2) {
+                            Thread.yield();
+                        }
                     }
+                    segmentsToPutEnd.countDown();
                 });
             }
             segmentsToPutEnd.await();
@@ -165,7 +159,6 @@ public class DbImplTest
             }
         }
         finally {
-            db.close();
             ex.shutdownNow();
         }
     }
@@ -265,7 +258,7 @@ public class DbImplTest
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
         db.put("foo", "v1");
-        db.compactMemTable();
+        db.testCompactMemTable();
         assertEquals(db.get("foo"), "v1");
     }
 
@@ -284,7 +277,7 @@ public class DbImplTest
             assertEquals(db.get(key), "v2");
             assertEquals(db.get(key, s1), "v1");
 
-            db.compactMemTable();
+            db.testCompactMemTable();
             assertEquals(db.get(key), "v2");
             assertEquals(db.get(key, s1), "v1");
             s1.close();
@@ -303,9 +296,9 @@ public class DbImplTest
         // one has a smaller "smallest" key.
         db.put("bar", "b");
         db.put("foo", "v1");
-        db.compactMemTable();
+        db.testCompactMemTable();
         db.put("foo", "v2");
-        db.compactMemTable();
+        db.testCompactMemTable();
         assertEquals(db.get("foo"), "v2");
     }
 
@@ -319,7 +312,7 @@ public class DbImplTest
         assertEquals(db.get("foo"), "v1");
         db.put("foo", "v2");
         assertEquals(db.get("foo"), "v2");
-        db.compactMemTable();
+        db.testCompactMemTable();
         assertEquals(db.get("foo"), "v2");
     }
 
@@ -519,7 +512,7 @@ public class DbImplTest
         for (int i = 0; i < n; i++) {
             assertEquals(db.get(key(i)), key(i) + longString(1000, 'v'));
         }
-        db.compactMemTable();
+        db.testCompactMemTable();
 
         for (int i = 0; i < n; i++) {
             assertEquals(db.get(key(i)), key(i) + longString(1000, 'v'));
@@ -573,7 +566,7 @@ public class DbImplTest
         db.reopen();
         assertTrue(db.numberOfFilesInLevel(0) > 0);
         assertEquals(db.numberOfFilesInLevel(1), 0);
-        db.compactRange(0, "", key(100000));
+        db.testCompactRange(0, null, null);
 
         assertEquals(db.numberOfFilesInLevel(0), 0);
         assertTrue(db.numberOfFilesInLevel(1) > 0);
@@ -626,14 +619,14 @@ public class DbImplTest
             db.put(key, value);
         }
         db.put("C", "vc");
-        db.compactMemTable();
+        db.testCompactMemTable();
         db.testCompactRange(0, null, null);
 
         // Make sparse update
         db.put("A", "va2");
         db.put("B100", "bvalue2");
         db.put("C", "vc2");
-        db.compactMemTable();
+        db.testCompactMemTable();
 
         // Compactions should not cause us to create a situation where
         // a file overlaps too much data at the next level.
@@ -678,7 +671,7 @@ public class DbImplTest
                 assertBetween(db.size("", key(50)), 5000000, 5010000);
                 assertBetween(db.size("", key(50) + ".suffix"), 5100000, 5110000);
 
-                db.compactRange(0, key(compactStart), key(compactStart + 9));
+                db.testCompactRange(0, key(compactStart), key(compactStart + 9));
             }
 
             assertEquals(db.numberOfFilesInLevel(0), 0);
@@ -718,7 +711,7 @@ public class DbImplTest
 
             assertBetween(db.size(key(3), key(5)), 110000, 111000);
 
-            db.compactRange(0, key(0), key(100));
+            db.testCompactRange(0, null, null);
         }
     }
 
@@ -790,18 +783,18 @@ public class DbImplTest
         db.put("foo", "tiny");
         db.put("pastFoo2", "v2");  // Advance sequence number one more
 
-        db.compactMemTable();
+        db.testCompactMemTable();
         assertTrue(db.numberOfFilesInLevel(0) > 0);
 
         assertEquals(big, db.get("foo", snapshot));
         assertBetween(db.size("", "pastFoo"), 50000, 60000);
         snapshot.close();
         assertEquals(db.allEntriesFor("foo"), asList("tiny", big));
-        db.compactRange(0, "", "x");
+        db.testCompactRange(0, null, "x");
         assertEquals(db.allEntriesFor("foo"), asList("tiny"));
         assertEquals(db.numberOfFilesInLevel(0), 0);
         assertTrue(db.numberOfFilesInLevel(1) >= 1);
-        db.compactRange(1, "", "x");
+        db.testCompactRange(1, null, "x");
         assertEquals(db.allEntriesFor("foo"), asList("tiny"));
 
         assertBetween(db.size("", "pastFoo"), 0, 1000);
@@ -882,7 +875,7 @@ public class DbImplTest
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
 
         db.put("foo", "v1");
-        db.compactMemTable();
+        db.testCompactMemTable();
 
         int last = DbConstants.MAX_MEM_COMPACT_LEVEL;
         assertEquals(db.numberOfFilesInLevel(last), 1); // foo => v1 is now in last level
@@ -890,7 +883,7 @@ public class DbImplTest
         // Place a table at level last-1 to prevent merging with preceding mutation
         db.put("a", "begin");
         db.put("z", "end");
-        db.compactMemTable();
+        db.testCompactMemTable();
         assertEquals(db.numberOfFilesInLevel(last), 1);
         assertEquals(db.numberOfFilesInLevel(last - 1), 1);
         assertEquals(db.get("a"), "begin");
@@ -901,18 +894,18 @@ public class DbImplTest
         db.put("foo", "v2");
         final List<String> foo = db.allEntriesFor("foo");
         assertEquals(foo, asList("v2", "DEL", "v1"));
-        db.compactMemTable();  // Moves to level last-2
+        db.testCompactMemTable();  // Moves to level last-2
         assertEquals(db.get("a"), "begin");
         assertEquals(db.get("foo"), "v2");
         assertEquals(db.get("z"), "end");
 
         assertEquals(db.allEntriesFor("foo"), asList("v2", "DEL", "v1"));
-        db.compactRange(last - 2, "", "z");
+        db.testCompactRange(last - 2, null, "z");
 
         // DEL eliminated, but v1 remains because we aren't compacting that level
         // (DEL can be eliminated because v2 hides v1).
         assertEquals(db.allEntriesFor("foo"), asList("v2", "v1"));
-        db.compactRange(last - 1, "", "z");
+        db.testCompactRange(last - 1, null, null);
 
         // Merging last-1 w/ last, so we are the base level for "foo", so
         // DEL is removed.  (as is v1).
@@ -926,7 +919,7 @@ public class DbImplTest
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
 
         db.put("foo", "v1");
-        db.compactMemTable();
+        db.testCompactMemTable();
 
         int last = DbConstants.MAX_MEM_COMPACT_LEVEL;
         assertEquals(db.numberOfFilesInLevel(last), 1); // foo => v1 is now in last level
@@ -934,20 +927,20 @@ public class DbImplTest
         // Place a table at level last-1 to prevent merging with preceding mutation
         db.put("a", "begin");
         db.put("z", "end");
-        db.compactMemTable();
+        db.testCompactMemTable();
         assertEquals(db.numberOfFilesInLevel(last), 1);
         assertEquals(db.numberOfFilesInLevel(last - 1), 1);
 
         db.delete("foo");
 
         assertEquals(db.allEntriesFor("foo"), asList("DEL", "v1"));
-        db.compactMemTable();  // Moves to level last-2
+        db.testCompactMemTable();  // Moves to level last-2
         assertEquals(db.allEntriesFor("foo"), asList("DEL", "v1"));
-        db.compactRange(last - 2, "", "z");
+        db.testCompactRange(last - 2, null, null);
 
         // DEL kept: "last" file overlaps
         assertEquals(db.allEntriesFor("foo"), asList("DEL", "v1"));
-        db.compactRange(last - 1, "", "z");
+        db.testCompactRange(last - 1, null, null);
 
         // Merging last-1 w/ last, so we are the base level for "foo", so
         // DEL is removed.  (as is v1).
@@ -1071,33 +1064,33 @@ public class DbImplTest
         assertEquals(DbConstants.MAX_MEM_COMPACT_LEVEL, 2);
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
         makeTables(db, 3, "p", "q");
-        assertEquals("1,1,1", filesPerLevel(db.db));
+        assertEquals("1,1,1", db.filesPerLevel());
 
         // Compaction range falls before files
         db.compactRange("", "c");
-        assertEquals("1,1,1", filesPerLevel(db.db));
+        assertEquals("1,1,1", db.filesPerLevel());
 
         // Compaction range falls after files
         db.compactRange("r", "z");
-        assertEquals("1,1,1", filesPerLevel(db.db));
+        assertEquals("1,1,1", db.filesPerLevel());
 
         // Compaction range overlaps files
         db.compactRange("p1", "p9");
-        assertEquals("0,0,1", filesPerLevel(db.db));
+        assertEquals("0,0,1", db.filesPerLevel());
 
         // Populate a different range
         makeTables(db, 3, "c", "e");
-        assertEquals("1,1,2", filesPerLevel(db.db));
+        assertEquals("1,1,2", db.filesPerLevel());
 
         // Compact just the new range
         db.compactRange("b", "f");
-        assertEquals("0,0,2", filesPerLevel(db.db));
+        assertEquals("0,0,2", db.filesPerLevel());
 
         // Compact all
         makeTables(db, 1, "a", "z");
-        assertEquals("0,1,2", filesPerLevel(db.db));
+        assertEquals("0,1,2", db.filesPerLevel());
         db.compactRange(null, null);
-        assertEquals("0,0,1", filesPerLevel(db.db));
+        assertEquals("0,0,1", db.filesPerLevel());
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = ".* missing files")
@@ -1108,7 +1101,7 @@ public class DbImplTest
         assertEquals(db.get("foo"), "bar");
 
         // Dump the memtable to disk.
-        db.db.testCompactMemTable();
+        db.testCompactMemTable();
         assertEquals(db.get("foo"), "bar");
 
         db.close();
@@ -1119,7 +1112,7 @@ public class DbImplTest
 
     private boolean deleteAnSSTFile()
     {
-        for (File f : databaseDir.listFiles()) {
+        for (File f : Filename.listFiles(databaseDir)) {
             Filename.FileInfo fileInfo = Filename.parseFileName(f);
             if (fileInfo != null && fileInfo.getFileType() == Filename.FileType.TABLE) {
                 assertTrue(f.delete());
@@ -1137,7 +1130,7 @@ public class DbImplTest
         assertEquals("bar", db.get("foo"));
 
         // Dump the memtable to disk.
-        db.db.testCompactMemTable();
+        db.testCompactMemTable();
         assertEquals("bar", db.get("foo"));
         db.close();
         assertTrue(renameLDBToSST() > 0);
@@ -1152,7 +1145,7 @@ public class DbImplTest
     private int renameLDBToSST()
     {
         int filesRenamed = 0;
-        for (File f : databaseDir.listFiles()) {
+        for (File f : Filename.listFiles(databaseDir)) {
             Filename.FileInfo fileInfo = Filename.parseFileName(f);
             if (fileInfo != null && fileInfo.getFileType() == Filename.FileType.TABLE) {
                 assertTrue(f.renameTo(new File(f.getParent(), Filename.sstTableFileName(fileInfo.getFileNumber()))));
@@ -1169,14 +1162,14 @@ public class DbImplTest
         DbStringWrapper db = new DbStringWrapper(new Options(), counting, EnvImpl.createEnv());
         db.put("foo", "v2");
         db.compactRange("a", "z");
-        int files = counting.listFiles().length;
+        int files = Filename.listFiles(databaseDir).size();
         for (int i = 0; i < 10; i++) {
             db.put("foo", "v2");
             System.gc();
             System.gc();
             db.compactRange("a", "z");
         }
-        assertEquals(counting.listFiles().length, files);
+        assertEquals(Filename.listFiles(databaseDir).size(), files);
     }
 
     @Test
@@ -1197,7 +1190,7 @@ public class DbImplTest
         for (int i = 0; i < n; i += 100) {
             db.put(key(i), key(i));
         }
-        db.db.testCompactMemTable();
+        db.testCompactMemTable();
 
         // Prevent auto compactions triggered by seeks
         env.delayDataSync.set(true);
@@ -1208,7 +1201,7 @@ public class DbImplTest
             assertEquals(key(i), db.get(key(i)));
         }
         int reads = env.randomReadCounter.get();
-        System.out.println(filesPerLevel(db.db));
+        System.out.println(db.filesPerLevel());
         assertTrue(reads >= n, "no true that (reads>=n) " + reads + ">=" + n);
         assertTrue(reads <= n + 2 * n / 100, "no true that (reads <= n + 2 * n / 100): " + reads + "<= " + n + " + 2 * " + n + " / 100");
 
@@ -1231,27 +1224,8 @@ public class DbImplTest
         for (int i = 0; i < n; i++) {
             db.put(small, "begin");
             db.put(large, "end");
-            db.db.testCompactMemTable();
+            db.testCompactMemTable();
         }
-    }
-
-    // Return spread of files per level
-    private String filesPerLevel(DbImpl db)
-    {
-        StringBuilder result = new StringBuilder();
-        int lastNonZeroOffset = 0;
-        for (int level = 0; level < DbConstants.NUM_LEVELS; level++) {
-            int f = db.numberOfFilesInLevel(level);
-            if (result.length() > 0) {
-                result.append(",");
-            }
-            result.append(f);
-            if (f > 0) {
-                lastNonZeroOffset = result.length();
-            }
-        }
-        result.setLength(lastNonZeroOffset);
-        return result.toString();
     }
 
     @SafeVarargs
@@ -1262,7 +1236,6 @@ public class DbImplTest
     }
 
     private void testDb(DbStringWrapper db, List<Entry<String, String>> entries)
-            throws IOException
     {
         for (Entry<String, String> entry : entries) {
             db.put(entry.getKey(), entry.getValue());
@@ -1299,14 +1272,12 @@ public class DbImplTest
 
     @BeforeMethod
     public void setUp()
-            throws Exception
     {
         databaseDir = FileUtils.createTempDir("leveldb");
     }
 
     @AfterMethod
     public void tearDown()
-            throws Exception
     {
         for (DbStringWrapper db : opened) {
             db.close();
@@ -1511,7 +1482,7 @@ public class DbImplTest
             db.close();
         }
 
-        public void compactMemTable()
+        public void testCompactMemTable()
         {
             db.testCompactMemTable();
         }
@@ -1519,11 +1490,6 @@ public class DbImplTest
         public void compactRange(String start, String limit)
         {
             db.compactRange(start == null ? null : Slices.copiedBuffer(start, UTF_8).getBytes(), limit == null ? null : Slices.copiedBuffer(limit, UTF_8).getBytes());
-        }
-
-        public void compactRange(int level, String start, String limit)
-        {
-            db.testCompactRange(level, start == null ? null : Slices.copiedBuffer(start, UTF_8), limit == null ? null : Slices.copiedBuffer(limit, UTF_8));
         }
 
         public void testCompactRange(int level, String start, String limit)
@@ -1543,6 +1509,25 @@ public class DbImplTest
                 result += db.numberOfFilesInLevel(level);
             }
             return result;
+        }
+
+        // Return spread of files per level
+        public String filesPerLevel()
+        {
+            StringBuilder result = new StringBuilder();
+            int lastNonZeroOffset = 0;
+            for (int level = 0; level < DbConstants.NUM_LEVELS; level++) {
+                int f = db.numberOfFilesInLevel(level);
+                if (result.length() > 0) {
+                    result.append(",");
+                }
+                result.append(f);
+                if (f > 0) {
+                    lastNonZeroOffset = result.length();
+                }
+            }
+            result.setLength(lastNonZeroOffset);
+            return result.toString();
         }
 
         public long size(String start, String limit)

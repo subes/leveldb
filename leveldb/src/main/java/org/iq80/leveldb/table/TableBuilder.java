@@ -107,7 +107,6 @@ public class TableBuilder
     }
 
     public long getFileSize()
-            throws IOException
     {
         return position;
     }
