@@ -19,8 +19,8 @@ package org.iq80.leveldb.impl;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.FluentIterable;
+import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DB;
@@ -293,7 +293,6 @@ public class DbImpl
     @Override
     public String getProperty(String name)
     {
-        checkBackgroundException();
         if (!name.startsWith("leveldb.")) {
             return null;
         }
@@ -341,7 +340,9 @@ public class DbImpl
     private void deleteObsoleteFiles()
     {
         checkState(mutex.isHeldByCurrentThread());
-
+        if (backgroundException != null) {
+            return;
+        }
         // Make a set of all of the live files
         List<Long> live = new ArrayList<>(this.pendingOutputs);
         for (FileMetaData fileMetaData : versions.getLiveFiles()) {
@@ -445,8 +446,7 @@ public class DbImpl
         catch (DatabaseShutdownException ignored) {
         }
         catch (Throwable throwable) {
-            backgroundException = throwable;
-            Throwables.throwIfInstanceOf(throwable, Error.class);
+            recordBackgroundError(throwable);
         }
         finally {
             try {
@@ -465,6 +465,7 @@ public class DbImpl
 
         if (immutableMemTable != null) {
             compactMemTable();
+            return;
         }
 
         Compaction compaction;
@@ -499,6 +500,9 @@ public class DbImpl
             try {
                 doCompactionWork(compactionState);
             }
+            catch (Exception e) {
+                recordBackgroundError(e);
+            }
             finally {
                 cleanupCompaction(compactionState);
                 compaction.close(); //release resources
@@ -520,6 +524,16 @@ public class DbImpl
             }
             manualCompaction = null;
         }
+    }
+
+    private void recordBackgroundError(Throwable e)
+    {
+        Throwable backgroundException = this.backgroundException;
+        if (backgroundException == null) {
+            this.backgroundException = e;
+            backgroundCondition.signalAll();
+        }
+        Throwables.throwIfInstanceOf(e, Error.class);
     }
 
     private void cleanupCompaction(CompactionState compactionState) throws IOException
@@ -608,7 +622,6 @@ public class DbImpl
     public byte[] get(byte[] key, ReadOptions options)
             throws DBException
     {
-        checkBackgroundException();
         LookupKey lookupKey;
         LookupResult lookupResult;
         mutex.lock();
@@ -863,7 +876,6 @@ public class DbImpl
     @Override
     public SeekingIteratorAdapter iterator(ReadOptions options)
     {
-        checkBackgroundException();
         mutex.lock();
         try {
             DbIterator rawIterator = internalIterator();
@@ -939,10 +951,8 @@ public class DbImpl
         boolean allowDelay = !force;
 
         while (true) {
-            if (backgroundException != null) {
-                throw new DBException("Background exception occurred", backgroundException);
-            }
-            else if (allowDelay && versions.numberOfFilesInLevel(0) > L0_SLOWDOWN_WRITES_TRIGGER) {
+            checkBackgroundException();
+            if (allowDelay && versions.numberOfFilesInLevel(0) > L0_SLOWDOWN_WRITES_TRIGGER) {
                 // We are getting close to hitting a hard limit on the number of
                 // L0 files.  Rather than delaying a single write by several
                 // seconds when we hit the hard limit, start delaying each

@@ -1133,6 +1133,8 @@ public class DbImplTest
             errorType.set(false);
             db.reopen();
             assertEquals(db.get("foo"), "bar");
+            db.close();
+            FileUtils.deleteRecursively(databaseDir);
         }
     }
 
