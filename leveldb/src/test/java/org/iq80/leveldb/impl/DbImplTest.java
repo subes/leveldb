@@ -39,6 +39,7 @@ import org.iq80.leveldb.util.SequentialFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
 import org.iq80.leveldb.util.WritableFile;
+import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
@@ -1093,6 +1094,123 @@ public class DbImplTest
         assertEquals("0,0,1", db.filesPerLevel());
     }
 
+    @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = ".*' does not exist.*")
+    public void testOpenOptionsCreateIfMissingFalse() throws Exception
+    {
+        Options options = new Options();
+        options.createIfMissing(false);
+        new DbImpl(options, new File(databaseDir, "missing"), EnvImpl.createEnv());
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = ".*' exists .*")
+    public void testOpenOptionsErrorIfExistTrue() throws Exception
+    {
+        Options options = new Options();
+        try {
+            for (int i = 0; i < 2; ++i) {
+                options.createIfMissing(true);
+                options.errorIfExists(false);
+                try (DbImpl db = new DbImpl(options, databaseDir, EnvImpl.createEnv())) {
+                    //make db and close
+                }
+            }
+        }
+        catch (Exception e) {
+            Assert.fail("Should not fail exceptions");
+        }
+        options.createIfMissing(false);
+        options.errorIfExists(true);
+        new DbImpl(options, databaseDir, EnvImpl.createEnv()); //reopen and should fail
+    }
+
+    //Check that number of files does not grow when we are out of space
+    @Test
+    public void testNoSpace() throws Exception
+    {
+        Options options = new Options();
+        SpecialEnv env = new SpecialEnv(EnvImpl.createEnv());
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir, env);
+
+        db.put("foo", "v1");
+        assertEquals(db.get("foo"), "v1");
+        db.compactRange("a", "z");
+        int numFiles = Filename.listFiles(databaseDir).size();
+        env.noSpace.set(true); // Force out-of-space errors
+        for (int i = 0; i < 10; i++) {
+            for (int level = 0; level < DbConstants.NUM_LEVELS - 1; level++) {
+                db.testCompactRange(level, null, null);
+            }
+        }
+        env.noSpace.set(false);
+        assertTrue(Filename.listFiles(databaseDir).size() < numFiles + 3);
+    }
+
+    @Test
+    public void testNonWritableFileSystem() throws Exception
+    {
+        Options options = new Options();
+        options.writeBufferSize(1000);
+        SpecialEnv env = new SpecialEnv(EnvImpl.createEnv());
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir, env);
+        db.put("foo", "v1");
+        env.nonWritable.set(true);  // Force errors for new files
+        String big = longString(100000, 'x');
+        int errors = 0;
+        for (int i = 0; i < 20; i++) {
+            try {
+                db.put("foo", big);
+            }
+            catch (Exception e) {
+                errors++;
+                Thread.sleep(100);
+            }
+        }
+        assertTrue(errors > 0);
+        env.nonWritable.set(false);
+    }
+
+    @Test
+    public void testWriteSyncError() throws Exception
+    {
+        // Check that log sync errors cause the DB to disallow future writes.
+
+        // (a) Cause log sync calls to fail
+        SpecialEnv env = new SpecialEnv(EnvImpl.createEnv());
+        DbStringWrapper db = new DbStringWrapper(new Options(), databaseDir, env);
+        env.dataSyncError.set(true);
+
+        WriteOptions w = new WriteOptions();
+        // (b) Normal write should succeed
+        db.put("k1", "v1", w);
+        assertEquals(db.get("k1"), "v1");
+
+        // (c) Do a sync write; should fail
+        w.sync(true);
+        try {
+            db.put("k2", "v2", w);
+            Assert.fail("Should not reach this");
+        }
+        catch (Exception ignore) {
+        }
+        assertEquals(db.get("k1"), "v1");
+        assertEquals(db.get("k2"), null);
+
+        // (d) make sync behave normally
+        env.dataSyncError.set(false);
+
+        // (e) Do a non-sync write; should fail
+        w.sync(false);
+        try {
+            db.put("k3", "v3", w);
+            Assert.fail("Should not reach this");
+        }
+        catch (Exception e) {
+        }
+        assertEquals(db.get("k1"), "v1");
+        assertEquals(db.get("k2"), null);
+        assertEquals(db.get("k3"), null);
+    }
+
     @Test
     public void testManifestWriteError() throws Exception
     {
@@ -1507,6 +1625,11 @@ public class DbImplTest
             db.put(toByteArray(key), toByteArray(value));
         }
 
+        public void put(String key, String value, WriteOptions wo)
+        {
+            db.put(toByteArray(key), toByteArray(value), wo);
+        }
+
         public void delete(String key)
         {
             db.delete(toByteArray(key));
@@ -1691,7 +1814,7 @@ public class DbImplTest
         private AtomicBoolean noSpace = new AtomicBoolean();
 
         // Simulate non-writable file system while this pointer is non-NULL
-        private AtomicBoolean nonWritable = new AtomicBoolean();
+        protected AtomicBoolean nonWritable = new AtomicBoolean();
 
         // Force sync of manifest files to fail while this pointer is non-NULL
         private AtomicBoolean manifestSyncError = new AtomicBoolean();

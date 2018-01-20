@@ -37,6 +37,7 @@ public class Options
 
     public static Options fromOptions(Options options)
     {
+        checkArgNotNull(options, "Options can't be null");
         final Options options1 = new Options();
         options1.createIfMissing = options.createIfMissing;
         options1.errorIfExists = options.errorIfExists;

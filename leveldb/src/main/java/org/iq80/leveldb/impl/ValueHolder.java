@@ -17,8 +17,6 @@
  */
 package org.iq80.leveldb.impl;
 
-import java.util.Objects;
-
 /**
  * Value holder for reference modification like in C++
  */
@@ -49,30 +47,5 @@ final class ValueHolder<V>
     public V getValue()
     {
         return value;
-    }
-
-    @Override
-    public boolean equals(Object o)
-    {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-        ValueHolder<?> that = (ValueHolder<?>) o;
-        return Objects.equals(value, that.value);
-    }
-
-    @Override
-    public int hashCode()
-    {
-        return Objects.hash(value);
-    }
-
-    @Override
-    public String toString()
-    {
-        return "ValueHolder{value=" + value + '}';
     }
 }

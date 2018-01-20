@@ -15,4 +15,12 @@
     <properties>
         <air.main.basedir>${project.parent.basedir}</air.main.basedir>
     </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.testng</groupId>
+            <artifactId>testng</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

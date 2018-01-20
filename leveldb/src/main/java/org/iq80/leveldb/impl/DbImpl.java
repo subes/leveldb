@@ -692,9 +692,7 @@ public class DbImpl
     public void delete(byte[] key)
             throws DBException
     {
-        try (WriteBatchImpl writeBatch = new WriteBatchImpl()) {
-            writeInternal(writeBatch.delete(key), new WriteOptions());
-        }
+        delete(key, new WriteOptions());
     }
 
     @Override
@@ -732,59 +730,29 @@ public class DbImpl
                 w.backgroundCondition.awaitUninterruptibly();
             }
             if (w.done) {
-                return null;
+                w.checkExceptions();
+                return options.snapshot() ? snapshots.newSnapshot(versions.getLastSequence()) : null;
             }
-            long sequenceEnd;
-            WriteBatchImpl updates = null;
-            ValueHolder<WriteBatchInternal> lastWriter = new ValueHolder<>(w);
-            // May temporarily unlock and wait.
-            makeRoomForWrite(myBatch == null);
-            if (myBatch != null) {
-                updates = buildBatchGroup(lastWriter);
-
-                // Get sequence numbers for this change set
-                long sequenceBegin = versions.getLastSequence() + 1;
-                sequenceEnd = sequenceBegin + updates.size() - 1;
-
-                // Add to log and apply to memtable.  We can release the lock
-                // during this phase since "w" is currently responsible for logging
-                // and protects against concurrent loggers and concurrent writes
-                // into mem_.
-                // log and memtable are modified by makeRoomForWrite
-                mutex.unlock();
-                try {
-                    // Log write
-                    Slice record = writeWriteBatch(updates, sequenceBegin);
-                    try {
-                        log.addRecord(record, options.sync());
-                    }
-                    catch (IOException e) {
-                        throw new DBException(e);
-                    }
-
-                    // Update memtable
-                    //this.memTable is modified by makeRoomForWrite
-                    updates.forEach(new InsertIntoHandler(this.memTable, sequenceBegin));
-                }
-                finally {
-                    mutex.lock();
-                }
-                if (updates == tmpBatch) {
-                    tmpBatch.clear();
-                }
-                // Reserve this sequence in the version set
-                versions.setLastSequence(sequenceEnd);
+            ValueHolder<WriteBatchInternal> lastWriterVh = new ValueHolder<>(w);
+            Throwable error = null;
+            try {
+                multipleWriteGroup(myBatch, options, lastWriterVh);
+            }
+            catch (Exception e) {
+                //all writers must be notified of this exception
+                error = e;
             }
 
-            final WriteBatchInternal lastWriteV = lastWriter.getValue();
+            WriteBatchInternal lastWrite = lastWriterVh.getValue();
             while (true) {
                 WriteBatchInternal ready = writers.peekFirst();
                 writers.pollFirst();
                 if (ready != w) {
+                    ready.error = error;
                     ready.done = true;
                     ready.signal();
                 }
-                if (ready == lastWriteV) {
+                if (ready == lastWrite) {
                     break;
                 }
             }
@@ -793,16 +761,59 @@ public class DbImpl
             if (!writers.isEmpty()) {
                 writers.peekFirst().signal();
             }
-
-            if (options.snapshot()) {
-                return snapshots.newSnapshot(versions.getLastSequence());
+            checkBackgroundException();
+            if (error != null) {
+                Throwables.propagateIfPossible(error, DBException.class);
+                throw new DBException(error);
             }
-            else {
-                return null;
-            }
+            return options.snapshot() ? snapshots.newSnapshot(versions.getLastSequence()) : null;
         }
         finally {
             mutex.unlock();
+        }
+    }
+
+    private void multipleWriteGroup(WriteBatchImpl myBatch, WriteOptions options, ValueHolder<WriteBatchInternal> lastWriter)
+    {
+        long sequenceEnd;
+        WriteBatchImpl updates = null;
+        // May temporarily unlock and wait.
+        makeRoomForWrite(myBatch == null);
+        if (myBatch != null) {
+            updates = buildBatchGroup(lastWriter);
+
+            // Get sequence numbers for this change set
+            long sequenceBegin = versions.getLastSequence() + 1;
+            sequenceEnd = sequenceBegin + updates.size() - 1;
+
+            // Add to log and apply to memtable.  We can release the lock
+            // during this phase since "w" is currently responsible for logging
+            // and protects against concurrent loggers and concurrent writes
+            // into mem_.
+            // log and memtable are modified by makeRoomForWrite
+            mutex.unlock();
+            try {
+                // Log write
+                Slice record = writeWriteBatch(updates, sequenceBegin);
+                log.addRecord(record, options.sync());
+                // Update memtable
+                //this.memTable is modified by makeRoomForWrite
+                updates.forEach(new InsertIntoHandler(this.memTable, sequenceBegin));
+            }
+            catch (Exception e) {
+                // The state of the log file is indeterminate: the log record we
+                // just added may or may not show up when the DB is re-opened.
+                // So we force the DB into a mode where all future writes fail.
+                recordBackgroundError(e);
+            }
+            finally {
+                mutex.lock();
+            }
+            if (updates == tmpBatch) {
+                tmpBatch.clear();
+            }
+            // Reserve this sequence in the version set
+            versions.setLastSequence(sequenceEnd);
         }
     }
 
@@ -1659,18 +1670,30 @@ public class DbImpl
         private final WriteBatchImpl batch;
         private final boolean sync;
         private final Condition backgroundCondition;
-        private boolean done = false;
+        boolean done = false;
+        public Throwable error;
 
-        public WriteBatchInternal(WriteBatchImpl batch, boolean sync, Condition backgroundCondition)
+        WriteBatchInternal(WriteBatchImpl batch, boolean sync, Condition backgroundCondition)
         {
             this.batch = batch;
             this.sync = sync;
             this.backgroundCondition = backgroundCondition;
         }
 
-        public void signal()
+        void signal()
         {
             backgroundCondition.signal();
+        }
+
+        void checkExceptions()
+        {
+            checkBackgroundException();
+            if (error instanceof Error) {
+                throw (Error) error;
+            }
+            if (error != null) {
+                throw new DBException(error);
+            }
         }
     }
 }
