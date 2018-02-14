@@ -22,6 +22,7 @@ import org.iq80.leveldb.util.AbstractSeekingIterator;
 import org.iq80.leveldb.util.DbIterator;
 import org.iq80.leveldb.util.Slice;
 
+import java.io.IOException;
 import java.util.Comparator;
 import java.util.Map.Entry;
 
@@ -40,7 +41,7 @@ public final class SnapshotSeekingIterator
     }
 
     @Override
-    public void close()
+    public void close() throws IOException
     {
         next = null;
         iterator.close();

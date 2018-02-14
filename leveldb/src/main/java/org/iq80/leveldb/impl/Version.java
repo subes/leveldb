@@ -22,8 +22,10 @@ import com.google.common.collect.ImmutableList.Builder;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
 import org.iq80.leveldb.util.MergingIterator;
+import org.iq80.leveldb.util.SafeListBuilder;
 import org.iq80.leveldb.util.Slice;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -117,20 +119,21 @@ public class Version
     }
 
     @Override
-    public MergingIterator iterator()
+    public MergingIterator iterator() throws IOException
     {
         return new MergingIterator(getLevelIterators(), getInternalKeyComparator());
     }
 
-    List<SeekingIterator<InternalKey, Slice>> getLevelIterators()
+    List<SeekingIterator<InternalKey, Slice>> getLevelIterators() throws IOException
     {
-        Builder<SeekingIterator<InternalKey, Slice>> builder = ImmutableList.builder();
-        for (Level level : levels) {
-            if (!level.getFiles().isEmpty()) {
-                builder.add(level.iterator());
+        try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder();) {
+            for (Level level : levels) {
+                if (!level.getFiles().isEmpty()) {
+                    builder.add(level.iterator());
+                }
             }
+            return builder.build();
         }
-        return builder.build();
     }
 
     public LookupResult get(LookupKey key, ReadStats readStats)

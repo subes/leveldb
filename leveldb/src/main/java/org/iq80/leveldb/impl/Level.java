@@ -18,12 +18,13 @@
 package org.iq80.leveldb.impl;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.LevelIterator;
 import org.iq80.leveldb.util.MergingIterator;
+import org.iq80.leveldb.util.SafeListBuilder;
 import org.iq80.leveldb.util.Slice;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -68,14 +69,15 @@ public class Level
     }
 
     @Override
-    public SeekingIterator<InternalKey, Slice> iterator()
+    public SeekingIterator<InternalKey, Slice> iterator() throws IOException
     {
         if (levelNumber == 0) {
-            ImmutableList.Builder<SeekingIterator<InternalKey, Slice>> builder = ImmutableList.builder();
-            for (FileMetaData file : files) {
-                builder.add(tableCache.newIterator(file));
+            try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder()) {
+                for (FileMetaData file : files) {
+                    builder.add(tableCache.newIterator(file));
+                }
+                return new MergingIterator(builder.build(), internalKeyComparator);
             }
-            return new MergingIterator(builder.build(), internalKeyComparator);
         }
         else {
             return createLevelConcatIterator(tableCache, files, internalKeyComparator);

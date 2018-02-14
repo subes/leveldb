@@ -21,6 +21,7 @@ import org.iq80.leveldb.impl.InternalKey;
 import org.iq80.leveldb.impl.SeekingIterator;
 
 import java.io.Closeable;
+import java.io.IOException;
 import java.util.Map.Entry;
 
 public final class DbIterator implements SeekingIterator<InternalKey, Slice>, Closeable
@@ -50,9 +51,15 @@ public final class DbIterator implements SeekingIterator<InternalKey, Slice>, Cl
     }
 
     @Override
-    public void close()
+    public void close() throws IOException
     {
-        cleanup.run();
+        //end user api is protected against multiple close
+        try {
+            mergingIterator.close();
+        }
+        finally {
+            cleanup.run();
+        }
     }
 
     @Override

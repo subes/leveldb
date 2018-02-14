@@ -52,4 +52,10 @@ public final class LRUCache<K, V> implements ILRUCache<K, V>
     {
         return cache.get(key, loader);
     }
+
+    @Override
+    public void invalidateAll()
+    {
+        cache.invalidateAll();
+    }
 }

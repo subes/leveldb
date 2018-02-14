@@ -20,6 +20,7 @@ package org.iq80.leveldb.util;
 import com.google.common.collect.Maps;
 import org.iq80.leveldb.impl.InternalKey;
 
+import java.io.IOException;
 import java.util.Map.Entry;
 
 public class InternalTableIterator
@@ -63,5 +64,11 @@ public class InternalTableIterator
         sb.append("{fromIterator=").append(tableIterator);
         sb.append('}');
         return sb.toString();
+    }
+
+    @Override
+    public void close() throws IOException
+    {
+        tableIterator.close();
     }
 }

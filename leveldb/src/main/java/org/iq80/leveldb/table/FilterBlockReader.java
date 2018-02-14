@@ -36,7 +36,7 @@ final class FilterBlockReader
         this.filterPolicy = filterPolicy;
         final int n = contents.length();
         final int lgAndOffset = 5;
-        if (n < lgAndOffset) { //byte + int
+        if (n < lgAndOffset) { //1 byte for baseLg and 4 for start of offset array
             this.baseLg = 0;
             this.contents = null;
             this.num = 0;

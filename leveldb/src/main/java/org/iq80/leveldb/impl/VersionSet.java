@@ -27,6 +27,7 @@ import com.google.common.io.Files;
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.MergingIterator;
+import org.iq80.leveldb.util.SafeListBuilder;
 import org.iq80.leveldb.util.SequentialFile;
 import org.iq80.leveldb.util.Slice;
 
@@ -193,34 +194,36 @@ public class VersionSet
     }
 
     @Override
-    public MergingIterator iterator()
+    public MergingIterator iterator() throws IOException
     {
         return current.iterator();
     }
 
-    public MergingIterator makeInputIterator(Compaction c)
+    public MergingIterator makeInputIterator(Compaction c) throws IOException
     {
         // Level-0 files have to be merged together.  For other levels,
         // we will make a concatenating iterator per level.
         // TODO(opt): use concatenating iterator for level-0 if there is no overlap
-        List<SeekingIterator<InternalKey, Slice>> list = new ArrayList<>();
-        for (int which = 0; which < 2; which++) {
-            List<FileMetaData> files = c.input(which);
-            if (!files.isEmpty()) {
-                if (c.getLevel() + which == 0) {
-                    ImmutableList.Builder<SeekingIterator<InternalKey, Slice>> builder = ImmutableList.builder();
-                    for (FileMetaData file : files) {
-                        builder.add(tableCache.newIterator(file));
+        try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> list = SafeListBuilder.builder()) {
+            for (int which = 0; which < 2; which++) {
+                List<FileMetaData> files = c.input(which);
+                if (!files.isEmpty()) {
+                    if (c.getLevel() + which == 0) {
+                        try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder()) {
+                            for (FileMetaData file : files) {
+                                builder.add(tableCache.newIterator(file));
+                            }
+                            list.add(new MergingIterator(builder.build(), internalKeyComparator));
+                        }
                     }
-                    list.add(new MergingIterator(builder.build(), internalKeyComparator));
-                }
-                else {
-                    // Create concatenating iterator for the files from this level
-                    list.add(Level.createLevelConcatIterator(tableCache, files, internalKeyComparator));
+                    else {
+                        // Create concatenating iterator for the files from this level
+                        list.add(Level.createLevelConcatIterator(tableCache, files, internalKeyComparator));
+                    }
                 }
             }
+            return new MergingIterator(list.build(), internalKeyComparator);
         }
-        return new MergingIterator(list, internalKeyComparator);
     }
 
     public boolean overlapInLevel(int level, Slice smallestUserKey, Slice largestUserKey)

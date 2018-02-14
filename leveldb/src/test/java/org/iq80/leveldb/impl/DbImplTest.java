@@ -73,6 +73,7 @@ import static org.iq80.leveldb.table.BlockHelper.assertSequence;
 import static org.iq80.leveldb.table.BlockHelper.beforeString;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
@@ -91,8 +92,10 @@ public class DbImplTest
     public Object[][] optionsProvider()
     {
         return new Object[][] {
-                {"No Compression", new Options().compressionType(CompressionType.NONE)},
+                {"Default", new Options()},
+                //{"Reuse", new Options().reuseLog(true)},
                 {"Bloom Filter", new Options().filterPolicy(new BloomFilterPolicy(10))},
+                {"No Compression", new Options().compressionType(CompressionType.NONE)},
                 {"Snappy", new Options().compressionType(CompressionType.SNAPPY)}
         };
     }
@@ -1328,8 +1331,6 @@ public class DbImplTest
         int files = Filename.listFiles(databaseDir).size();
         for (int i = 0; i < 10; i++) {
             db.put("foo", "v2");
-            System.gc();
-            System.gc();
             db.compactRange("a", "z");
         }
         assertEquals(Filename.listFiles(databaseDir).size(), files);
@@ -1377,6 +1378,31 @@ public class DbImplTest
 
         env.delayDataSync.set(false);
         db.close();
+    }
+
+    /**
+     * Beside current test, at the end every {@link DbImplTest} test case, close is asserted for opened file handles.
+     */
+    @Test(dataProvider = "options")
+    public void testFileHandlesClosed(final String desc, final Options options) throws Exception
+    {
+        assertTrue(options.maxOpenFiles() > 2); //for this test to work
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir, EnvImpl.createEnv());
+        fillLevels(db, "A", "C");
+        assertTrue(db.get("A") != null);
+        assertTrue(db.get("A.missing") == null);
+        db.db.invalidateAllCaches();
+        assertTrue(db.getOpenHandles() == 2, "All files but log and manifest should be closed");
+        try (StringDbIterator iterator = db.iterator()) {
+            iterator.seek("B");
+            assertNotNull(iterator.next());
+            assertTrue(db.getOpenHandles() > 2);
+        }
+        db.db.invalidateAllCaches();
+        //with no compaction running and no cache, all db files should be closed but log and manifest
+        assertEquals(db.getOpenHandles(), 2, "All files but log and manifest should be closed");
+        db.close();
+        assertEquals(db.getOpenHandles(), 0, "All files should be closed");
     }
 
     // Do n memtable compactions, each of which produces an sstable
@@ -1584,6 +1610,7 @@ public class DbImplTest
     {
         private final Options options;
         private final File databaseDir;
+        private final CountingHandlesEnv env1;
         private DbImpl db;
 
         private DbStringWrapper(Options options, File databaseDir)
@@ -1597,8 +1624,15 @@ public class DbImplTest
         {
             this.options = options.verifyChecksums(true).createIfMissing(true).errorIfExists(true);
             this.databaseDir = databaseDir;
-            this.db = new DbImpl(options, databaseDir, env);
+            env1 = new CountingHandlesEnv(env);
+            this.db = new DbImpl(options, databaseDir, env1);
             opened.add(this);
+        }
+
+        //get non closed file handles
+        public int getOpenHandles()
+        {
+            return env1.getOpenHandles();
         }
 
         public String get(String key)
@@ -1647,6 +1681,7 @@ public class DbImplTest
         public void close()
         {
             db.close();
+            assertEquals(env1.getOpenHandles(), 0, "All files should be closed");
         }
 
         public void testCompactMemTable()
@@ -1723,23 +1758,23 @@ public class DbImplTest
             db = new DbImpl(options.verifyChecksums(true).createIfMissing(false).errorIfExists(false), databaseDir, EnvImpl.createEnv());
         }
 
-        private List<String> allEntriesFor(String userKey)
+        private List<String> allEntriesFor(String userKey) throws IOException
         {
             ImmutableList.Builder<String> result = ImmutableList.builder();
-            DbIterator iterator = db.internalIterator();
-            while (iterator.hasNext()) {
-                Entry<InternalKey, Slice> entry = iterator.next();
-                String entryKey = entry.getKey().getUserKey().toString(UTF_8);
-                if (entryKey.equals(userKey)) {
-                    if (entry.getKey().getValueType() == ValueType.VALUE) {
-                        result.add(entry.getValue().toString(UTF_8));
-                    }
-                    else {
-                        result.add("DEL");
+            try (DbIterator iterator = db.internalIterator()) {
+                while (iterator.hasNext()) {
+                    Entry<InternalKey, Slice> entry = iterator.next();
+                    String entryKey = entry.getKey().getUserKey().toString(UTF_8);
+                    if (entryKey.equals(userKey)) {
+                        if (entry.getKey().getValueType() == ValueType.VALUE) {
+                            result.add(entry.getValue().toString(UTF_8));
+                        }
+                        else {
+                            result.add("DEL");
+                        }
                     }
                 }
             }
-            iterator.close();
             return result.build();
         }
 

@@ -17,11 +17,13 @@
  */
 package org.iq80.leveldb.util;
 
+import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.impl.FileMetaData;
 import org.iq80.leveldb.impl.InternalKey;
 import org.iq80.leveldb.impl.InternalKeyComparator;
 import org.iq80.leveldb.impl.TableCache;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map.Entry;
 
@@ -47,7 +49,22 @@ public final class LevelIterator
     {
         // reset index to before first and clear the data iterator
         index = 0;
-        current = null;
+        closeAndResetCurrent();
+    }
+
+    private void closeAndResetCurrent()
+    {
+        if (this.current != null) {
+            try {
+                this.current.close();
+            }
+            catch (IOException e) {
+                throw new DBException(e);
+            }
+            finally {
+                this.current = null;
+            }
+        }
     }
 
     @Override
@@ -88,11 +105,12 @@ public final class LevelIterator
         // if indexIterator does not have a next, it mean the key does not exist in this iterator
         if (index < files.size()) {
             // seek the current iterator to the key
+            closeAndResetCurrent();
             current = openNextFile();
             current.seek(targetKey);
         }
         else {
-            current = null;
+            closeAndResetCurrent();
         }
     }
 
@@ -110,6 +128,7 @@ public final class LevelIterator
             }
             if (!(currentHasNext)) {
                 if (index < files.size()) {
+                    closeAndResetCurrent();
                     current = openNextFile();
                 }
                 else {
@@ -125,7 +144,7 @@ public final class LevelIterator
         }
         else {
             // set current to empty iterator to avoid extra calls to user iterators
-            current = null;
+            closeAndResetCurrent();
             return null;
         }
     }
@@ -134,7 +153,12 @@ public final class LevelIterator
     {
         FileMetaData fileMetaData = files.get(index);
         index++;
-        return tableCache.newIterator(fileMetaData);
+        try {
+            return tableCache.newIterator(fileMetaData);
+        }
+        catch (IOException e) {
+            throw new DBException(e);
+        }
     }
 
     @Override
@@ -147,5 +171,11 @@ public final class LevelIterator
         sb.append(", current=").append(current);
         sb.append('}');
         return sb.toString();
+    }
+
+    @Override
+    public void close()
+    {
+        closeAndResetCurrent();
     }
 }

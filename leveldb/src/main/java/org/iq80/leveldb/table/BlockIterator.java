@@ -212,4 +212,10 @@ public class BlockIterator
 
         return new BlockEntry(key, value);
     }
+
+    @Override
+    public void close()
+    {
+        //na
+    }
 }

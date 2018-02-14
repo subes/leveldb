@@ -122,25 +122,26 @@ public class BlockTest
         Block block = new Block(blockSlice, new BytewiseComparator());
         assertEquals(block.size(), BlockHelper.estimateBlockSize(blockRestartInterval, entries));
 
-        BlockIterator blockIterator = block.iterator();
-        BlockHelper.assertSequence(blockIterator, entries);
+        try (BlockIterator blockIterator = block.iterator()) {
+            BlockHelper.assertSequence(blockIterator, entries);
 
-        blockIterator.seekToFirst();
-        BlockHelper.assertSequence(blockIterator, entries);
+            blockIterator.seekToFirst();
+            BlockHelper.assertSequence(blockIterator, entries);
 
-        for (BlockEntry entry : entries) {
-            List<BlockEntry> nextEntries = entries.subList(entries.indexOf(entry), entries.size());
-            blockIterator.seek(entry.getKey());
-            BlockHelper.assertSequence(blockIterator, nextEntries);
+            for (BlockEntry entry : entries) {
+                List<BlockEntry> nextEntries = entries.subList(entries.indexOf(entry), entries.size());
+                blockIterator.seek(entry.getKey());
+                BlockHelper.assertSequence(blockIterator, nextEntries);
 
-            blockIterator.seek(BlockHelper.before(entry));
-            BlockHelper.assertSequence(blockIterator, nextEntries);
+                blockIterator.seek(BlockHelper.before(entry));
+                BlockHelper.assertSequence(blockIterator, nextEntries);
 
-            blockIterator.seek(BlockHelper.after(entry));
-            BlockHelper.assertSequence(blockIterator, nextEntries.subList(1, nextEntries.size()));
+                blockIterator.seek(BlockHelper.after(entry));
+                BlockHelper.assertSequence(blockIterator, nextEntries.subList(1, nextEntries.size()));
+            }
+
+            blockIterator.seek(Slices.wrappedBuffer(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF}));
+            BlockHelper.assertSequence(blockIterator, Collections.<BlockEntry>emptyList());
         }
-
-        blockIterator.seek(Slices.wrappedBuffer(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF}));
-        BlockHelper.assertSequence(blockIterator, Collections.<BlockEntry>emptyList());
     }
 }

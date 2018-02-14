@@ -20,7 +20,6 @@ package org.iq80.leveldb.impl;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
 import com.google.common.collect.FluentIterable;
-import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DB;
@@ -42,6 +41,7 @@ import org.iq80.leveldb.table.TableBuilder;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.DbIterator;
 import org.iq80.leveldb.util.MergingIterator;
+import org.iq80.leveldb.util.SafeListBuilder;
 import org.iq80.leveldb.util.SequentialFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceInput;
@@ -246,6 +246,25 @@ public class DbImpl
 
             // schedule compactions
             maybeScheduleCompaction();
+        }
+        finally {
+            mutex.unlock();
+        }
+    }
+
+    /**
+     * Wait for all background activity to finish and invalidate all cache.
+     * Only used to test that all file handles are closed correctly.
+     */
+    @VisibleForTesting
+    void invalidateAllCaches()
+    {
+        mutex.lock();
+        try {
+            while (backgroundCompaction != null && backgroundException == null) {
+                backgroundCondition.awaitUninterruptibly();
+            }
+            tableCache.invalidateAll();
         }
         finally {
             mutex.unlock();
@@ -581,13 +600,13 @@ public class DbImpl
                 int updateSize = sliceInput.readInt();
 
                 // read entries
-                WriteBatchImpl writeBatch = readWriteBatch(sliceInput, updateSize);
-
-                // apply entries to memTable
-                if (memTable == null) {
-                    memTable = new MemTable(internalKeyComparator);
+                try (WriteBatchImpl writeBatch = readWriteBatch(sliceInput, updateSize)) {
+                    // apply entries to memTable
+                    if (memTable == null) {
+                        memTable = new MemTable(internalKeyComparator);
+                    }
+                    writeBatch.forEach(new InsertIntoHandler(memTable, sequenceBegin));
                 }
-                writeBatch.forEach(new InsertIntoHandler(memTable, sequenceBegin));
 
                 // update the maxSequence
                 long lastSequence = sequenceBegin + updateSize - 1;
@@ -891,7 +910,7 @@ public class DbImpl
         try {
             DbIterator rawIterator = internalIterator();
 
-            // filter any entries not visible in our snapshot
+            // filter out any entries not visible in our snapshot
             long snapshot = getSnapshot(options);
             SnapshotSeekingIterator snapshotIterator = new SnapshotSeekingIterator(rawIterator, snapshot, internalKeyComparator.getUserComparator());
             return new SeekingIteratorAdapter(snapshotIterator);
@@ -904,16 +923,15 @@ public class DbImpl
     DbIterator internalIterator()
     {
         mutex.lock();
-        try {
+        try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder()) {
             // merge together the memTable, immutableMemTable, and tables in version set
-            ImmutableList.Builder<SeekingIterator<InternalKey, Slice>> builder = ImmutableList.builder();
             builder.add(memTable.iterator());
             if (immutableMemTable != null) {
                 builder.add(immutableMemTable.iterator());
             }
             Version current = versions.getCurrent();
-            current.retain();
             builder.addAll(current.getLevelIterators());
+            current.retain();
             return new DbIterator(new MergingIterator(builder.build(), internalKeyComparator), () -> {
                 mutex.lock();
                 try {
@@ -923,6 +941,9 @@ public class DbImpl
                     mutex.unlock();
                 }
             });
+        }
+        catch (IOException e) {
+            throw new DBException(e);
         }
         finally {
             mutex.unlock();
@@ -1112,15 +1133,18 @@ public class DbImpl
             try (WritableFile writableFile = env.newWritableFile(file)) {
                 TableBuilder tableBuilder = new TableBuilder(options, writableFile, new InternalUserComparator(internalKeyComparator));
 
-                for (Entry<InternalKey, Slice> entry : data) {
-                    // update keys
-                    InternalKey key = entry.getKey();
-                    if (smallest == null) {
-                        smallest = key;
-                    }
-                    largest = key;
+                try (SeekingIterator<InternalKey, Slice> it = data.iterator()) {
+                    while (it.hasNext()) {
+                        Entry<InternalKey, Slice> entry = it.next();
+                        // update keys
+                        InternalKey key = entry.getKey();
+                        if (smallest == null) {
+                            smallest = key;
+                        }
+                        largest = key;
 
-                    tableBuilder.add(key.encode(), entry.getValue());
+                        tableBuilder.add(key.encode(), entry.getValue());
+                    }
                 }
 
                 tableBuilder.finish();
@@ -1135,7 +1159,7 @@ public class DbImpl
             FileMetaData fileMetaData = new FileMetaData(fileNumber, file.length(), smallest, largest);
 
             // verify table can be opened
-            tableCache.newIterator(fileMetaData);
+            tableCache.newIterator(fileMetaData).close();
 
             return fileMetaData;
 
@@ -1160,9 +1184,7 @@ public class DbImpl
 
         // Release mutex while we're actually doing the compaction work
         mutex.unlock();
-        try {
-            MergingIterator iterator = versions.makeInputIterator(compactionState.compaction);
-
+        try (MergingIterator iterator = versions.makeInputIterator(compactionState.compaction)) {
             Slice currentUserKey = null;
             boolean hasCurrentUserKey = false;
 
@@ -1322,7 +1344,7 @@ public class DbImpl
 
         if (currentEntries > 0) {
             // Verify that the table is usable
-            tableCache.newIterator(outputNumber);
+            tableCache.newIterator(outputNumber).close();
         }
     }
 
@@ -1380,18 +1402,22 @@ public class DbImpl
             mutex.unlock();
         }
 
-        InternalKey startKey = new InternalKey(Slices.wrappedBuffer(range.start()), MAX_SEQUENCE_NUMBER, VALUE);
-        InternalKey limitKey = new InternalKey(Slices.wrappedBuffer(range.limit()), MAX_SEQUENCE_NUMBER, VALUE);
-        long startOffset = v.getApproximateOffsetOf(startKey);
-        long limitOffset = v.getApproximateOffsetOf(limitKey);
-        mutex.lock();
         try {
-            v.release();
+            InternalKey startKey = new InternalKey(Slices.wrappedBuffer(range.start()), MAX_SEQUENCE_NUMBER, VALUE);
+            InternalKey limitKey = new InternalKey(Slices.wrappedBuffer(range.limit()), MAX_SEQUENCE_NUMBER, VALUE);
+            long startOffset = v.getApproximateOffsetOf(startKey);
+            long limitOffset = v.getApproximateOffsetOf(limitKey);
+            return (limitOffset >= startOffset ? limitOffset - startOffset : 0);
         }
         finally {
-            mutex.unlock();
+            mutex.lock();
+            try {
+                v.release();
+            }
+            finally {
+                mutex.unlock();
+            }
         }
-        return (limitOffset >= startOffset ? limitOffset - startOffset : 0);
     }
 
     public long getMaxNextLevelOverlappingBytes()

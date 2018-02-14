@@ -20,7 +20,6 @@ package org.iq80.leveldb.impl;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalListener;
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.Options;
@@ -31,7 +30,6 @@ import org.iq80.leveldb.table.KeyValueFunction;
 import org.iq80.leveldb.table.Table;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.Closeables;
-import org.iq80.leveldb.util.Finalizer;
 import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.InternalTableIterator;
 import org.iq80.leveldb.util.LRUCache;
@@ -47,7 +45,6 @@ import static java.util.Objects.requireNonNull;
 public class TableCache
 {
     private final LoadingCache<Long, TableAndFile> cache;
-    private final Finalizer<Table> finalizer = new Finalizer<>(1);
     private final ILRUCache<CacheKey, Slice> blockCache;
 
     public TableCache(final File databaseDir,
@@ -63,18 +60,14 @@ public class TableCache
                     final TableAndFile value = notification.getValue();
                     if (value != null) {
                         final Table table = value.getTable();
-                        if (notification.getCause() == RemovalCause.EXPLICIT) {
-                            //on explicit it is already know to be unused, no need to wait
-                            //blockCache do save DirectByteBuffers references (only by arrays)
-                            try {
-                                table.closer().call();
-                            }
-                            catch (Exception e) {
-                                //todo do proper exception notification
-                                Finalizer.IGNORE_FINALIZER_MONITOR.unexpectedException(e);
-                            }
+                        try {
+                            //end user is required to close resources/iterators
+                            //no need to rely on GC to collect files even for MM Files.
+                            table.close();
                         }
-                        finalizer.addCleanup(table, table.closer());
+                        catch (IOException e) {
+                            throw new DBException(e);
+                        }
                     }
                 })
                 .build(new CacheLoader<Long, TableAndFile>()
@@ -88,33 +81,45 @@ public class TableCache
                 });
     }
 
-    public InternalTableIterator newIterator(FileMetaData file)
+    public InternalTableIterator newIterator(FileMetaData file) throws IOException
     {
         return newIterator(file.getNumber());
     }
 
-    public InternalTableIterator newIterator(long number)
+    public InternalTableIterator newIterator(long number) throws IOException
     {
-        return new InternalTableIterator(getTable(number).iterator());
+        try (Table table = getTable(number)) { //same as release
+            return new InternalTableIterator(table.iterator()); //make its own retain
+        }
     }
 
     public <T> T get(Slice key, FileMetaData fileMetaData, KeyValueFunction<T> resultBuilder)
     {
-        final Table table = getTable(fileMetaData.getNumber());
-        return table.internalGet(key, resultBuilder);
-
+        try (Table table = getTable(fileMetaData.getNumber())) { //same as release
+            return table.internalGet(key, resultBuilder);
+        }
+        catch (Exception e) {
+            throw new DBException(e);
+        }
     }
 
     public long getApproximateOffsetOf(FileMetaData file, Slice key)
     {
-        return getTable(file.getNumber()).getApproximateOffsetOf(key);
+        try (Table table = getTable(file.getNumber())) {
+            return table.getApproximateOffsetOf(key);
+        }
+        catch (IOException e) {
+            throw new DBException(e);
+        }
     }
 
     private Table getTable(long number)
     {
         Table table;
         try {
-            table = cache.get(number).getTable();
+            do {
+                table = cache.get(number).getTable();
+            } while (!table.retain());
         }
         catch (ExecutionException e) {
             Throwable cause = e;
@@ -128,8 +133,18 @@ public class TableCache
 
     public void close()
     {
+        invalidateAll();
+    }
+
+    /**
+     * Discards all entries in table and block (if any).
+     */
+    public void invalidateAll()
+    {
+        if (blockCache != null) {
+            blockCache.invalidateAll();
+        }
         cache.invalidateAll();
-        finalizer.destroy();
     }
 
     public void evict(long number)
@@ -145,17 +160,12 @@ public class TableCache
                 throws IOException
         {
             final File tableFile = tableFileName(databaseDir, fileNumber);
-            RandomInputFile source = null;
-            try {
-                source = env.newRandomAccessFile(tableFile);
+            RandomInputFile source = env.newRandomAccessFile(tableFile);
+            table = Closeables.wrapResource(() -> {
                 final FilterPolicy filterPolicy = (FilterPolicy) options.filterPolicy();
-                table = new Table(source, userComparator,
+                return new Table(source, userComparator,
                         options.verifyChecksums(), blockCache, filterPolicy);
-            }
-            catch (IOException e) {
-                Closeables.closeQuietly(source);
-                throw e;
-            }
+            }, source);
         }
 
         private File tableFileName(File databaseDir, long fileNumber)

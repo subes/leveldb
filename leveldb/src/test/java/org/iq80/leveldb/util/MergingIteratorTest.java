@@ -25,6 +25,7 @@ import org.iq80.leveldb.impl.ValueType;
 import org.iq80.leveldb.table.BytewiseComparator;
 import org.testng.annotations.Test;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -101,6 +102,11 @@ public class MergingIteratorTest
         protected Map.Entry<InternalKey, Slice> getNextElement()
         {
             return index < entries.size() ? entries.get(index++) : null;
+        }
+
+        @Override
+        public void close() throws IOException
+        {
         }
     }
 }

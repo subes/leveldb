@@ -21,20 +21,24 @@ import org.iq80.leveldb.table.Block;
 import org.iq80.leveldb.table.BlockIterator;
 import org.iq80.leveldb.table.Table;
 
+import java.io.IOException;
 import java.util.Map.Entry;
+
+import static com.google.common.base.Preconditions.checkState;
 
 public final class TableIterator
         extends AbstractSeekingIterator<Slice, Slice>
 {
-    private final Table table;
-    private final BlockIterator blockIterator;
+    private Table table;
+    private BlockIterator blockIterator;
     private BlockIterator current;
 
     public TableIterator(Table table, BlockIterator blockIterator)
     {
+        checkState(table.retain());
         this.table = table;
         this.blockIterator = blockIterator;
-        current = null;
+        closeAndResetCurrent();
     }
 
     @Override
@@ -42,7 +46,7 @@ public final class TableIterator
     {
         // reset index to before first and clear the data iterator
         blockIterator.seekToFirst();
-        current = null;
+        closeAndResetCurrent();
     }
 
     @Override
@@ -54,11 +58,12 @@ public final class TableIterator
         // if indexIterator does not have a next, it mean the key does not exist in this iterator
         if (blockIterator.hasNext()) {
             // seek the current iterator to the key
+            closeAndResetCurrent();
             current = getNextBlock();
             current.seek(targetKey);
         }
         else {
-            current = null;
+            closeAndResetCurrent();
         }
     }
 
@@ -76,6 +81,7 @@ public final class TableIterator
             }
             if (!(currentHasNext)) {
                 if (blockIterator.hasNext()) {
+                    closeAndResetCurrent();
                     current = getNextBlock();
                 }
                 else {
@@ -91,7 +97,7 @@ public final class TableIterator
         }
         else {
             // set current to empty iterator to avoid extra calls to user iterators
-            current = null;
+            closeAndResetCurrent();
             return null;
         }
     }
@@ -112,5 +118,28 @@ public final class TableIterator
         sb.append(", current=").append(current);
         sb.append('}');
         return sb.toString();
+    }
+
+    private void closeAndResetCurrent()
+    {
+        if (current != null) {
+            current.close();
+        }
+        current = null;
+    }
+
+    @Override
+    public void close() throws IOException
+    {
+        assert table != null : "Unexpected multiple calls to close() method";
+        try {
+            closeAndResetCurrent();
+            this.blockIterator.close();
+            this.blockIterator = null;
+        }
+        finally {
+            table.release();
+            table = null;
+        }
     }
 }

@@ -21,6 +21,7 @@ import com.google.common.collect.Lists;
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DBComparator;
 import org.iq80.leveldb.Options;
+import org.iq80.leveldb.impl.CountingHandlesEnv;
 import org.iq80.leveldb.impl.DbConstants;
 import org.iq80.leveldb.impl.DbImpl;
 import org.iq80.leveldb.impl.EnvImpl;
@@ -28,11 +29,11 @@ import org.iq80.leveldb.impl.InternalEntry;
 import org.iq80.leveldb.impl.InternalKey;
 import org.iq80.leveldb.impl.InternalKeyComparator;
 import org.iq80.leveldb.impl.MemTable;
+import org.iq80.leveldb.impl.SeekingIterable;
 import org.iq80.leveldb.impl.SeekingIterator;
 import org.iq80.leveldb.impl.SeekingIteratorAdapter;
 import org.iq80.leveldb.impl.ValueType;
 import org.iq80.leveldb.util.AbstractSeekingIterator;
-import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.FileUtils;
 import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.LRUCache;
@@ -53,7 +54,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.AbstractMap;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
@@ -140,13 +140,14 @@ public abstract class TableTest
     {
         Block entries = new Block(Slices.allocate(SIZE_OF_INT), new BytewiseComparator());
 
-        BlockIterator iterator = entries.iterator();
-        iterator.seekToFirst();
-        assertFalse(iterator.hasNext());
-        iterator.seekToLast();
-        assertFalse(iterator.hasNext());
-        iterator.seek(asciiToSlice("foo"));
-        assertFalse(iterator.hasNext());
+        try (BlockIterator iterator = entries.iterator()) {
+            iterator.seekToFirst();
+            assertFalse(iterator.hasNext());
+            iterator.seekToLast();
+            assertFalse(iterator.hasNext());
+            iterator.seek(asciiToSlice("foo"));
+            assertFalse(iterator.hasNext());
+        }
 
     }
 
@@ -251,7 +252,7 @@ public abstract class TableTest
                 String.format("Value %s is not in range [%s, %s]", val, low, high));
     }
 
-    private abstract static class Constructor implements AutoCloseable, Iterable<Map.Entry<Slice, Slice>>
+    private abstract static class Constructor implements AutoCloseable, SeekingIterable<Slice, Slice>
     {
         private final KVMap kvMap;
         private final UserComparator comparator;
@@ -528,22 +529,16 @@ public abstract class TableTest
             constructor.add(key, value);
         }
 
-        private void testForwardScan(KVMap data)
+        private void testForwardScan(KVMap data) throws IOException
         {
-            SeekingIterator<Slice, Slice> iter = constructor.iterator();
+            Iterator<Map.Entry<Slice, Slice>> iterator;
+            try (SeekingIterator<Slice, Slice> iter = constructor.iterator()) {
+                iter.seekToFirst();
 
-            iter.seekToFirst();
-
-            Iterator<Map.Entry<Slice, Slice>> iterator = data.entrySet().iterator();
-            while (iter.hasNext()) {
-                assertEqualsEntries(iter.next(), iterator.next());
-            }
-            if (iterator.hasNext()) {
-                SeekingIterator<Slice, Slice> iterator1 = constructor.iterator();
-                iterator1.seekToFirst();
-                ArrayList<Map.Entry<Slice, Slice>> entries = Lists.newArrayList(iterator1);
-                Map.Entry<Slice, Slice> next = iterator.next();
-                assertFalse(iterator.hasNext());
+                iterator = data.entrySet().iterator();
+                while (iter.hasNext()) {
+                    assertEqualsEntries(iter.next(), iterator.next());
+                }
             }
             assertFalse(iterator.hasNext());
         }
@@ -554,47 +549,48 @@ public abstract class TableTest
             assertEquals(actual.getValue(), expected.getValue());
         }
 
-        private void testRandomAccess(KVMap data)
+        private void testRandomAccess(KVMap data) throws IOException
         {
-            SeekingIterator<Slice, Slice> iter = constructor.iterator();
-            List<Slice> keys = Lists.newArrayList(data.keySet());
+            try (SeekingIterator<Slice, Slice> iter = constructor.iterator()) {
+                List<Slice> keys = Lists.newArrayList(data.keySet());
 
-            //assertFalse(iter.hasNext());
-            Iterator<Map.Entry<Slice, Slice>> modelIter = data.entrySet().iterator();
-            for (int i = 0; i < 200; i++) {
-                int toss = rnd.nextInt(5);
-                switch (toss) {
-                    case 0: {
-                        if (iter.hasNext()) {
-                            Map.Entry<Slice, Slice> itNex = iter.next();
-                            Map.Entry<Slice, Slice> modelNex = modelIter.next();
-                            assertEqualsEntries(itNex, modelNex);
+                //assertFalse(iter.hasNext());
+                Iterator<Map.Entry<Slice, Slice>> modelIter = data.entrySet().iterator();
+                for (int i = 0; i < 200; i++) {
+                    int toss = rnd.nextInt(5);
+                    switch (toss) {
+                        case 0: {
+                            if (iter.hasNext()) {
+                                Map.Entry<Slice, Slice> itNex = iter.next();
+                                Map.Entry<Slice, Slice> modelNex = modelIter.next();
+                                assertEqualsEntries(itNex, modelNex);
+                            }
+                            break;
                         }
-                        break;
-                    }
 
-                    case 1: {
-                        iter.seekToFirst();
-                        modelIter = data.entrySet().iterator();
-                        if (modelIter.hasNext()) {
-                            Map.Entry<Slice, Slice> itNex = iter.next();
-                            Map.Entry<Slice, Slice> modelNex = modelIter.next();
-                            assertEqualsEntries(itNex, modelNex);
+                        case 1: {
+                            iter.seekToFirst();
+                            modelIter = data.entrySet().iterator();
+                            if (modelIter.hasNext()) {
+                                Map.Entry<Slice, Slice> itNex = iter.next();
+                                Map.Entry<Slice, Slice> modelNex = modelIter.next();
+                                assertEqualsEntries(itNex, modelNex);
+                            }
+                            break;
                         }
-                        break;
-                    }
 
-                    case 2: {
-                        modelIter = getEntryIterator(data, iter, keys);
-                        break;
-                    }
+                        case 2: {
+                            modelIter = getEntryIterator(data, iter, keys);
+                            break;
+                        }
 
-                    case 3: {
-                        //TODO implement prev to all iterators
-                    }
-                    case 4: {
-                        //TODO implement seekLast to all iterators
-                        break;
+                        case 3: {
+                            //TODO implement prev to all iterators
+                        }
+                        case 4: {
+                            //TODO implement seekLast to all iterators
+                            break;
+                        }
                     }
                 }
             }
@@ -744,6 +740,14 @@ public abstract class TableTest
         {
             return new AbstractSeekingIterator<Slice, Slice>()
             {
+                @Override
+                public void close() throws IOException
+                {
+                    if (iterator != null) {
+                        iterator.close();
+                    }
+                }
+
                 MemTable.MemTableIterator iterator = table.iterator();
 
                 @Override
@@ -777,6 +781,7 @@ public abstract class TableTest
     {
         private DbImpl db;
         private File tmpDir;
+        private CountingHandlesEnv env;
 
         public DbConstructor(UserComparator comparator)
         {
@@ -791,7 +796,8 @@ public abstract class TableTest
                     .errorIfExists(true)
                     .writeBufferSize(10000);  // Something small to force merging
             tmpDir = FileUtils.createTempDir("leveldb");
-            this.db = new DbImpl(options, tmpDir, EnvImpl.createEnv());
+            env = new CountingHandlesEnv(EnvImpl.createEnv());
+            this.db = new DbImpl(options, tmpDir, env);
             for (Map.Entry<Slice, Slice> entry : kvMap.entrySet()) {
                 db.put(entry.getKey().getBytes(), entry.getValue().getBytes());
             }
@@ -803,6 +809,14 @@ public abstract class TableTest
         {
             return new AbstractSeekingIterator<Slice, Slice>()
             {
+                @Override
+                public void close() throws IOException
+                {
+                    if (iterator != null) {
+                        iterator.close();
+                    }
+                }
+
                 SeekingIteratorAdapter iterator = db.iterator();
 
                 @Override
@@ -835,7 +849,8 @@ public abstract class TableTest
         public void close() throws Exception
         {
             super.close();
-            Closeables.closeQuietly(db);
+            db.close();
+            assertEquals(env.getOpenHandles(), 0, "All files should have been closed (validate all iterables should be closed)");
             FileUtils.deleteRecursively(tmpDir);
         }
     }
@@ -961,35 +976,36 @@ public abstract class TableTest
 
         Table table = createTable(file, new BytewiseComparator(), true, null);
 
-        SeekingIterator<Slice, Slice> seekingIterator = table.iterator();
-        BlockHelper.assertSequence(seekingIterator, entries);
+        try (SeekingIterator<Slice, Slice> seekingIterator = table.iterator()) {
+            BlockHelper.assertSequence(seekingIterator, entries);
 
-        seekingIterator.seekToFirst();
-        BlockHelper.assertSequence(seekingIterator, entries);
+            seekingIterator.seekToFirst();
+            BlockHelper.assertSequence(seekingIterator, entries);
 
-        long lastApproximateOffset = 0;
-        for (BlockEntry entry : entries) {
-            List<BlockEntry> nextEntries = entries.subList(entries.indexOf(entry), entries.size());
-            seekingIterator.seek(entry.getKey());
-            BlockHelper.assertSequence(seekingIterator, nextEntries);
+            long lastApproximateOffset = 0;
+            for (BlockEntry entry : entries) {
+                List<BlockEntry> nextEntries = entries.subList(entries.indexOf(entry), entries.size());
+                seekingIterator.seek(entry.getKey());
+                BlockHelper.assertSequence(seekingIterator, nextEntries);
 
-            seekingIterator.seek(BlockHelper.before(entry));
-            BlockHelper.assertSequence(seekingIterator, nextEntries);
+                seekingIterator.seek(BlockHelper.before(entry));
+                BlockHelper.assertSequence(seekingIterator, nextEntries);
 
-            seekingIterator.seek(BlockHelper.after(entry));
-            BlockHelper.assertSequence(seekingIterator, nextEntries.subList(1, nextEntries.size()));
+                seekingIterator.seek(BlockHelper.after(entry));
+                BlockHelper.assertSequence(seekingIterator, nextEntries.subList(1, nextEntries.size()));
 
-            long approximateOffset = table.getApproximateOffsetOf(entry.getKey());
+                long approximateOffset = table.getApproximateOffsetOf(entry.getKey());
+                assertTrue(approximateOffset >= lastApproximateOffset);
+                lastApproximateOffset = approximateOffset;
+            }
+
+            Slice endKey = Slices.wrappedBuffer(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF});
+            seekingIterator.seek(endKey);
+            BlockHelper.assertSequence(seekingIterator, Collections.<BlockEntry>emptyList());
+
+            long approximateOffset = table.getApproximateOffsetOf(endKey);
             assertTrue(approximateOffset >= lastApproximateOffset);
-            lastApproximateOffset = approximateOffset;
         }
-
-        Slice endKey = Slices.wrappedBuffer(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF});
-        seekingIterator.seek(endKey);
-        BlockHelper.assertSequence(seekingIterator, Collections.<BlockEntry>emptyList());
-
-        long approximateOffset = table.getApproximateOffsetOf(endKey);
-        assertTrue(approximateOffset >= lastApproximateOffset);
 
     }
 

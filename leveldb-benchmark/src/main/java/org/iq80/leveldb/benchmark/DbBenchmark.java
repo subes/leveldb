@@ -481,13 +481,13 @@ public class DbBenchmark
     {
         long bytes = 0;
         for (int loops = 0; loops < 5; loops++) {
-            DBIterator iterator = db.iterator();
-            for (int i = 0; i < reads && iterator.hasNext(); i++) {
-                Map.Entry<byte[], byte[]> entry = iterator.next();
-                bytes += entry.getKey().length + entry.getValue().length;
-                thread.stats.finishedSingleOp();
+            try (DBIterator iterator = db.iterator()) {
+                for (int i = 0; i < reads && iterator.hasNext(); i++) {
+                    Map.Entry<byte[], byte[]> entry = iterator.next();
+                    bytes += entry.getKey().length + entry.getValue().length;
+                    thread.stats.finishedSingleOp();
+                }
             }
-            Closeables.closeQuietly(iterator);
         }
         thread.stats.addBytes(bytes);
     }

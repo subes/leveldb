@@ -17,7 +17,7 @@
  */
 package org.iq80.leveldb.impl;
 
-import com.google.common.base.Throwables;
+import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.util.Closeables;
 
 import java.io.File;
@@ -63,14 +63,11 @@ public class DbLock
 
     public void release()
     {
-        try {
+        try (FileChannel closeMe = channel) {
             lock.release();
         }
         catch (IOException e) {
-            Throwables.propagate(e);
-        }
-        finally {
-            Closeables.closeQuietly(channel);
+            throw new DBException(e);
         }
     }
 

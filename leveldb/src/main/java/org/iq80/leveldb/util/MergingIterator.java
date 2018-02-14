@@ -20,6 +20,7 @@ package org.iq80.leveldb.util;
 import org.iq80.leveldb.impl.InternalKey;
 import org.iq80.leveldb.impl.SeekingIterator;
 
+import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map.Entry;
@@ -101,5 +102,11 @@ public final class MergingIterator implements SeekingIterator<InternalKey, Slice
     public void remove()
     {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void close() throws IOException
+    {
+        Closeables.closeAll(iterators);
     }
 }

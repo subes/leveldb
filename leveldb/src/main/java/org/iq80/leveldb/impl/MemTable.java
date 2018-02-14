@@ -137,5 +137,11 @@ public class MemTable
         {
             throw new UnsupportedOperationException();
         }
+
+        @Override
+        public void close()
+        {
+            iterator = null;
+        }
     }
 }
