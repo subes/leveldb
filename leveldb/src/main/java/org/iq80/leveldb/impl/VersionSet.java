@@ -693,7 +693,7 @@ public class VersionSet
     public long getMaxNextLevelOverlappingBytes()
     {
         long result = 0;
-        for (int level = 1; level < NUM_LEVELS; level++) {
+        for (int level = 1; level < NUM_LEVELS - 1; level++) {
             for (FileMetaData fileMetaData : current.getFiles(level)) {
                 List<FileMetaData> overlaps = getOverlappingInputs(level + 1, fileMetaData.getSmallest(), fileMetaData.getLargest());
                 long totalSize = 0;
