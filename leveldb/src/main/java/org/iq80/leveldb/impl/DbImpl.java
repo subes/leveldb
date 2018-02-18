@@ -1643,7 +1643,7 @@ public class DbImpl
     }
 
     @VisibleForTesting
-    public void testCompactMemTable() throws DBException
+    void testCompactMemTable() throws DBException
     {
         // NULL batch means just wait for earlier writes to be done
         writeInternal(null, new WriteOptions());
@@ -1658,6 +1658,23 @@ public class DbImpl
                 if (backgroundException != null) {
                     throw new DBException(backgroundException);
                 }
+            }
+        }
+        finally {
+            mutex.unlock();
+        }
+    }
+
+    /**
+     * Wait for all background activity to finish; only usable in controlled environment.
+     */
+    @VisibleForTesting
+    void waitForBackgroundCompactationToFinish()
+    {
+        mutex.lock();
+        try {
+            while (backgroundCompaction != null && !shuttingDown.get() && backgroundException == null) {
+                backgroundCondition.awaitUninterruptibly();
             }
         }
         finally {

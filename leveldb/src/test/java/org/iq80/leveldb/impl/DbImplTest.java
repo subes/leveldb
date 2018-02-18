@@ -1364,7 +1364,6 @@ public class DbImplTest
             assertEquals(key(i), db.get(key(i)));
         }
         int reads = env.randomReadCounter.get();
-        System.out.println(db.filesPerLevel());
         assertTrue(reads >= n, "no true that (reads>=n) " + reads + ">=" + n);
         assertTrue(reads <= n + 2 * n / 100, "no true that (reads <= n + 2 * n / 100): " + reads + "<= " + n + " + 2 * " + n + " / 100");
 
@@ -1653,16 +1652,19 @@ public class DbImplTest
         public void testCompactMemTable()
         {
             db.testCompactMemTable();
+            db.waitForBackgroundCompactationToFinish();
         }
 
         public void compactRange(String start, String limit)
         {
             db.compactRange(start == null ? null : Slices.copiedBuffer(start, UTF_8).getBytes(), limit == null ? null : Slices.copiedBuffer(limit, UTF_8).getBytes());
+            db.waitForBackgroundCompactationToFinish();
         }
 
         public void testCompactRange(int level, String start, String limit)
         {
             db.testCompactRange(level, start == null ? null : Slices.copiedBuffer(start, UTF_8), limit == null ? null : Slices.copiedBuffer(limit, UTF_8));
+            db.waitForBackgroundCompactationToFinish();
         }
 
         public int numberOfFilesInLevel(int level)
