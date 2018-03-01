@@ -17,6 +17,8 @@
  */
 package org.iq80.leveldb.util;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.zip.Checksum;
 
 /**
@@ -25,7 +27,6 @@ import java.util.zip.Checksum;
  * and implemented on many Intel chipsets supporting SSE4.2.
  */
 // this code was taken from Apache Hadoop
-// todo modify to work on buffers directly to avoid extra memcopy
 public class PureJavaCrc32C
         implements Checksum
 {
@@ -114,6 +115,129 @@ public class PureJavaCrc32C
             len--;
         }
 
+        // Publish crc out to object
+        crc = localCrc;
+    }
+
+    public void update(ByteBuffer buffer)
+    {
+        int pos = buffer.position();
+        int limit = buffer.limit();
+        int rem = limit - pos;
+
+        if (rem <= 0) {
+            return;
+        }
+        if (buffer.hasArray()) {
+                update(buffer.array(), pos + buffer.arrayOffset(), rem);
+        }
+        else {
+            //we could swap buffer type to LE (as most CPU) but no gain noticed
+            if (buffer.order() == ByteOrder.LITTLE_ENDIAN) {
+                updateDirectBufferL(buffer, pos, limit);
+            }
+            else {
+                updateDirectBufferB(buffer, pos, limit);
+            }
+        }
+        buffer.position(limit);
+    }
+
+    /**
+     * Little endian
+     */
+    private void updateDirectBufferL(ByteBuffer buffer, int off, int limit)
+    {
+        int len = limit - off;
+        int localCrc = crc;
+        while (len > 7) {
+            final long aLong = buffer.getLong(off);
+            final int aInt = (int) aLong;
+            final int c0 = (aInt ^ localCrc) & 0xff;
+            localCrc >>>= 8;
+            final int c1 = (aInt >>> 8 ^ (localCrc)) & 0xff;
+            localCrc >>>= 8;
+            final int c2 = (aInt >>> 16 ^ (localCrc)) & 0xff;
+            final int c3 = (aInt >>> 24 ^ (localCrc >>> 8)) & 0xff;
+
+            localCrc = (T8_7[c0] ^ T8_6[c1]) ^
+                    (T8_5[c2] ^ T8_4[c3]);
+
+            final int aInt1 = (int) (aLong >>> 32);
+
+            final int c4 = aInt1 & 0xff;
+            final int c5 = aInt1 >>> 8 & 0xff;
+            final int c6 = aInt1 >>> 16 & 0xff;
+            final int c7 = aInt1 >>> 24 & 0xff;
+
+            localCrc ^= (T8_3[c4] ^ T8_2[c5]) ^
+                    (T8_1[c6] ^ T8_0[c7]);
+
+            off += 8;
+            len -= 8;
+        }
+
+        /* loop unroll - duff's device style */
+        switch (len) {
+            case 7: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 6: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 5: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 4: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 3: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 2: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 1: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off)) & 0xff)];
+            default: break; // satisfy Findbugs
+        }
+        // Publish crc out to object
+        crc = localCrc;
+    }
+
+    /**
+     * big endian
+     */
+    private void updateDirectBufferB(ByteBuffer buffer, int off, int limit)
+    {
+        int len = limit - off;
+
+        int localCrc = crc;
+        while (len > 7) {
+            final long aLong = buffer.getLong(off);
+            final int aInt = (int) (aLong >>> 32);
+            final int c0 = (aInt >>> 24 ^ localCrc) & 0xff;
+            localCrc >>>= 8;
+            final int c1 = (aInt >>> 16 ^ (localCrc)) & 0xff;
+            localCrc >>>= 8;
+            final int c2 = (aInt >>> 8 ^ (localCrc)) & 0xff;
+            final int c3 = (aInt ^ (localCrc >>> 8)) & 0xff;
+
+            final int aInt1 = (int) aLong;
+
+            final int c4 = aInt1 >>> 24;
+            final int c5 = aInt1 >>> 16 & 0xff;
+            final int c6 = aInt1 >>> 8 & 0xff;
+            final int c7 = aInt1 & 0xff;
+
+            localCrc = (T8_7[c0] ^ T8_6[c1]) ^
+                    (T8_5[c2] ^ T8_4[c3]);
+
+            localCrc ^= (T8_3[c4] ^ T8_2[c5]) ^
+                    (T8_1[c6] ^ T8_0[c7]);
+
+            off += 8;
+            len -= 8;
+        }
+
+        /* loop unroll - duff's device style */
+        switch (len) {
+            case 7: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 6: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 5: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 4: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 3: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 2: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off++)) & 0xff)];
+            case 1: localCrc = (localCrc >>> 8) ^ T8_0[((localCrc ^ buffer.get(off)) & 0xff)];
+            default: break; // satisfy Findbugs
+        }
         // Publish crc out to object
         crc = localCrc;
     }

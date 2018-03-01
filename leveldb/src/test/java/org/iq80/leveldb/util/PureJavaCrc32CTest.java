@@ -17,31 +17,61 @@
  */
 package org.iq80.leveldb.util;
 
+import org.testng.Assert;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.io.UnsupportedEncodingException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.function.Function;
+import java.util.function.IntFunction;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static org.iq80.leveldb.util.PureJavaCrc32C.mask;
 import static org.iq80.leveldb.util.PureJavaCrc32C.unmask;
-import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 
 public class PureJavaCrc32CTest
 {
+    private static final IntFunction<ByteBuffer> DIRECT_LE = cap -> ByteBuffer.allocateDirect(cap).order(ByteOrder.LITTLE_ENDIAN);
+    private static final IntFunction<ByteBuffer> DIRECT_BE = cap -> ByteBuffer.allocateDirect(cap).order(ByteOrder.BIG_ENDIAN);
+    private static final IntFunction<ByteBuffer> HEAP = cap -> ByteBuffer.allocate(cap);
+
     @Test(dataProvider = "crcs")
-    public void testCrc(int expectedCrc, byte[] data)
+    public void testStandardResults(int expectedCrc, byte[] data)
     {
-        assertEquals(expectedCrc, computeCrc(data));
+        assertEquals(computeCrc(data), expectedCrc);
+    }
+
+    @Test(dataProvider = "crcs")
+    public void testBufferStandardResults(int expectedCrc, byte[] b)
+    {
+        //ensure correct handling of offset/positions/limits in DIRECT_LE/DIRECT_BE/array buffers
+        assertCrcWithBuffers(expectedCrc, b, DIRECT_LE);
+        assertCrcWithBuffers(expectedCrc, b, DIRECT_BE);
+        assertCrcWithBuffers(expectedCrc, b, HEAP);
+        //with array offset
+        final byte[] dest = new byte[b.length + 2];
+        System.arraycopy(b, 0, dest, 2, b.length);
+        final ByteBuffer byteBuffer = ByteBuffer.wrap(dest, 2, b.length);
+        assertEquals(expectedCrc, computeCrc(byteBuffer));
+    }
+
+    private void assertCrcWithBuffers(int expectedCrc, byte[] b, IntFunction<ByteBuffer> factory)
+    {
+        assertEquals(expectedCrc, computeCrc(fillBuffer(b, factory.apply(b.length), 0))); //position = 0 & limit = b.length
+        assertEquals(expectedCrc, computeCrc(fillBuffer(b, factory.apply(b.length + 5), 0))); //limit < than accessible size
+        assertEquals(expectedCrc, computeCrc(fillBuffer(b, factory.apply(b.length + 5), 2)));  //position > 0 & limit < than accessible size
+        assertEquals(expectedCrc, computeCrc(fillBuffer(b, factory.apply(b.length + 7), 2)));  //position > 0 & limit < than accessible size
     }
 
     @DataProvider(name = "crcs")
     public Object[][] data()
     {
         return new Object[][] {
+                // Standard results from rfc3720 section B.4.
                 new Object[] {0x8a9136aa, arrayOf(32, (byte) 0)},
                 new Object[] {0x62a8ab43, arrayOf(32, (byte) 0xff)},
                 new Object[] {0x46dd794e, arrayOf(32, position -> (byte) position.intValue())},
@@ -62,12 +92,42 @@ public class PureJavaCrc32CTest
     }
 
     @Test
+    public void testProducesDifferentCrcs2()
+            throws UnsupportedEncodingException
+    {
+        assertFalse(computeCrc(fillBuffer("a".getBytes(US_ASCII), ByteBuffer.allocateDirect(10), 0)) == computeCrc(fillBuffer("foo".getBytes(US_ASCII), ByteBuffer.allocateDirect(10), 0)));
+    }
+
+    @Test
+    public void testLoopUnroll() throws Exception
+    {
+        assertCrcWithBuffers(0xb219db69, new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, DIRECT_BE);
+        assertCrcWithBuffers(0xb219db69, new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, DIRECT_LE);
+        assertCrcWithBuffers(0xb219db69, new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, HEAP);
+
+        assertCrcWithBuffers(0xbd3a64dc, new byte[] {1, 2, 3, 4, 5, 6, 7}, DIRECT_BE);
+        assertCrcWithBuffers(0xbd3a64dc, new byte[] {1, 2, 3, 4, 5, 6, 7}, DIRECT_LE);
+        assertCrcWithBuffers(0xbd3a64dc, new byte[] {1, 2, 3, 4, 5, 6, 7}, HEAP);
+    }
+
+    @Test
     public void testComposes()
             throws UnsupportedEncodingException
     {
         PureJavaCrc32C crc = new PureJavaCrc32C();
         crc.update("hello ".getBytes(US_ASCII), 0, 6);
         crc.update("world".getBytes(US_ASCII), 0, 5);
+
+        assertEquals(crc.getIntValue(), computeCrc("hello world".getBytes(US_ASCII)));
+    }
+
+    @Test
+    public void testComposesDirectBuffers()
+            throws UnsupportedEncodingException
+    {
+        PureJavaCrc32C crc = new PureJavaCrc32C();
+        crc.update(fillBuffer("hello ".getBytes(US_ASCII), ByteBuffer.allocateDirect(6), 0));
+        crc.update(fillBuffer("world".getBytes(US_ASCII), ByteBuffer.allocateDirect(5), 0));
 
         assertEquals(crc.getIntValue(), computeCrc("hello world".getBytes(US_ASCII)));
     }
@@ -91,6 +151,22 @@ public class PureJavaCrc32CTest
         PureJavaCrc32C crc = new PureJavaCrc32C();
         crc.update(data, 0, data.length);
         return crc.getIntValue();
+    }
+
+    private static int computeCrc(ByteBuffer buffer)
+    {
+        PureJavaCrc32C crc = new PureJavaCrc32C();
+        crc.update(buffer);
+        return crc.getIntValue();
+    }
+
+    private static ByteBuffer fillBuffer(byte[] data, ByteBuffer byteBuffer, int initialPos)
+    {
+        byteBuffer.position(initialPos);
+        byteBuffer.put(data);
+        byteBuffer.position(initialPos);
+        byteBuffer.limit(initialPos + data.length);
+        return byteBuffer;
     }
 
     private static byte[] arrayOf(int size, byte value)
@@ -119,5 +195,10 @@ public class PureJavaCrc32CTest
         }
 
         return result;
+    }
+
+    private void assertEquals(int actual, int required)
+    {
+        Assert.assertEquals(actual, required, String.format("Required 0x%s but actual is 0x%s", Integer.toHexString(required), Integer.toHexString(actual)));
     }
 }
