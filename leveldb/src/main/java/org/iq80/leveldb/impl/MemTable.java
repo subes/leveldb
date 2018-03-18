@@ -30,7 +30,6 @@ import static java.util.Objects.requireNonNull;
 import static org.iq80.leveldb.util.SizeOf.SIZE_OF_LONG;
 
 public class MemTable
-        implements SeekingIterable<InternalKey, Slice>
 {
     private final ConcurrentSkipListMap<InternalKey, Slice> table;
     private final AtomicLong approximateMemoryUsage = new AtomicLong();
@@ -84,7 +83,6 @@ public class MemTable
         return null;
     }
 
-    @Override
     public MemTableIterator iterator()
     {
         return new MemTableIterator();

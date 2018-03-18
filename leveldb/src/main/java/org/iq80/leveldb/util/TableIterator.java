@@ -17,6 +17,7 @@
  */
 package org.iq80.leveldb.util;
 
+import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.table.Block;
 import org.iq80.leveldb.table.BlockIterator;
 import org.iq80.leveldb.table.Table;
@@ -29,15 +30,17 @@ import static com.google.common.base.Preconditions.checkState;
 public final class TableIterator
         extends AbstractSeekingIterator<Slice, Slice>
 {
+    private final ReadOptions options;
     private Table table;
     private BlockIterator blockIterator;
     private BlockIterator current;
 
-    public TableIterator(Table table, BlockIterator blockIterator)
+    public TableIterator(Table table, BlockIterator blockIterator, ReadOptions options)
     {
         checkState(table.retain());
         this.table = table;
         this.blockIterator = blockIterator;
+        this.options = options;
         closeAndResetCurrent();
     }
 
@@ -105,7 +108,7 @@ public final class TableIterator
     private BlockIterator getNextBlock()
     {
         Slice blockHandle = blockIterator.next().getValue();
-        Block dataBlock = table.openBlock(blockHandle);
+        Block dataBlock = table.openBlock(blockHandle, options);
         return dataBlock.iterator();
     }
 

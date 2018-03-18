@@ -21,6 +21,7 @@ import com.google.common.collect.Lists;
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DBComparator;
 import org.iq80.leveldb.Options;
+import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.impl.CountingHandlesEnv;
 import org.iq80.leveldb.impl.DbConstants;
 import org.iq80.leveldb.impl.DbImpl;
@@ -29,7 +30,6 @@ import org.iq80.leveldb.impl.InternalEntry;
 import org.iq80.leveldb.impl.InternalKey;
 import org.iq80.leveldb.impl.InternalKeyComparator;
 import org.iq80.leveldb.impl.MemTable;
-import org.iq80.leveldb.impl.SeekingIterable;
 import org.iq80.leveldb.impl.SeekingIterator;
 import org.iq80.leveldb.impl.SeekingIteratorAdapter;
 import org.iq80.leveldb.impl.ValueType;
@@ -252,7 +252,7 @@ public abstract class TableTest
                 String.format("Value %s is not in range [%s, %s]", val, low, high));
     }
 
-    private abstract static class Constructor implements AutoCloseable, SeekingIterable<Slice, Slice>
+    private abstract static class Constructor implements AutoCloseable
     {
         private final KVMap kvMap;
         private final UserComparator comparator;
@@ -322,7 +322,7 @@ public abstract class TableTest
             // Open the table
             StringSource source = new StringSource(sink.content);
             ILRUCache<CacheKey, Slice> blockCache = LRUCache.createCache(options.cacheSize() > 0 ? (int) options.cacheSize() : 8 << 20, new BlockHandleSliceWeigher());
-            table = new Table(source, comp, options.verifyChecksums(), blockCache, (FilterPolicy) options.filterPolicy());
+            table = new Table(source, comp, options.paranoidChecks(), blockCache, (FilterPolicy) options.filterPolicy());
         }
 
         public long approximateOffsetOf(String key)
@@ -333,7 +333,7 @@ public abstract class TableTest
         @Override
         public SeekingIterator<Slice, Slice> iterator()
         {
-            return table.iterator();
+            return table.iterator(new ReadOptions());
         }
     }
 
@@ -976,7 +976,7 @@ public abstract class TableTest
 
         Table table = createTable(file, new BytewiseComparator(), true, null);
 
-        try (SeekingIterator<Slice, Slice> seekingIterator = table.iterator()) {
+        try (SeekingIterator<Slice, Slice> seekingIterator = table.iterator(new ReadOptions())) {
             BlockHelper.assertSequence(seekingIterator, entries);
 
             seekingIterator.seekToFirst();

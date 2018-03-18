@@ -17,9 +17,11 @@
  */
 package org.iq80.leveldb.impl;
 
+import org.iq80.leveldb.ReadOptions;
+
 import java.io.IOException;
 
 public interface SeekingIterable<K, V>
 {
-    SeekingIterator<K, V> iterator() throws IOException;
+    SeekingIterator<K, V> iterator(ReadOptions options) throws IOException;
 }

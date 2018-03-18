@@ -18,6 +18,7 @@
 package org.iq80.leveldb.impl;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.LevelIterator;
 import org.iq80.leveldb.util.MergingIterator;
@@ -69,27 +70,27 @@ public class Level
     }
 
     @Override
-    public SeekingIterator<InternalKey, Slice> iterator() throws IOException
+    public SeekingIterator<InternalKey, Slice> iterator(ReadOptions options) throws IOException
     {
         if (levelNumber == 0) {
             try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder()) {
                 for (FileMetaData file : files) {
-                    builder.add(tableCache.newIterator(file));
+                    builder.add(tableCache.newIterator(file, options));
                 }
                 return new MergingIterator(builder.build(), internalKeyComparator);
             }
         }
         else {
-            return createLevelConcatIterator(tableCache, files, internalKeyComparator);
+            return createLevelConcatIterator(tableCache, files, internalKeyComparator, options);
         }
     }
 
-    public static LevelIterator createLevelConcatIterator(TableCache tableCache, List<FileMetaData> files, InternalKeyComparator internalKeyComparator)
+    public static LevelIterator createLevelConcatIterator(TableCache tableCache, List<FileMetaData> files, InternalKeyComparator internalKeyComparator, ReadOptions options)
     {
-        return new LevelIterator(tableCache, files, internalKeyComparator);
+        return new LevelIterator(tableCache, files, internalKeyComparator, options);
     }
 
-    public LookupResult get(LookupKey key, ReadStats readStats)
+    public LookupResult get(ReadOptions options, LookupKey key, ReadStats readStats)
     {
         if (files.isEmpty()) {
             return null;
@@ -140,7 +141,7 @@ public class Level
             lastFileRead = fileMetaData;
             lastFileReadLevel = levelNumber;
 
-            final LookupResult lookupResult = tableCache.get(key.getInternalKey().encode(), fileMetaData, new KeyMatchingLookup(key));
+            final LookupResult lookupResult = tableCache.get(options, key.getInternalKey().encode(), fileMetaData, new KeyMatchingLookup(key));
             if (lookupResult != null) {
                 return lookupResult;
             }

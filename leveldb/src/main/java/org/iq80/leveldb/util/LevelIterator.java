@@ -18,6 +18,7 @@
 package org.iq80.leveldb.util;
 
 import org.iq80.leveldb.DBException;
+import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.impl.FileMetaData;
 import org.iq80.leveldb.impl.InternalKey;
 import org.iq80.leveldb.impl.InternalKeyComparator;
@@ -34,14 +35,16 @@ public final class LevelIterator
     private final TableCache tableCache;
     private final List<FileMetaData> files;
     private final InternalKeyComparator comparator;
+    private final ReadOptions options;
     private InternalTableIterator current;
     private int index;
 
-    public LevelIterator(TableCache tableCache, List<FileMetaData> files, InternalKeyComparator comparator)
+    public LevelIterator(TableCache tableCache, List<FileMetaData> files, InternalKeyComparator comparator, ReadOptions options)
     {
         this.tableCache = tableCache;
         this.files = files;
         this.comparator = comparator;
+        this.options = options;
     }
 
     @Override
@@ -154,7 +157,7 @@ public final class LevelIterator
         FileMetaData fileMetaData = files.get(index);
         index++;
         try {
-            return tableCache.newIterator(fileMetaData);
+            return tableCache.newIterator(fileMetaData, options);
         }
         catch (IOException e) {
             throw new DBException(e);

@@ -23,6 +23,7 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.Options;
+import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.table.BlockHandleSliceWeigher;
 import org.iq80.leveldb.table.CacheKey;
 import org.iq80.leveldb.table.FilterPolicy;
@@ -81,22 +82,22 @@ public class TableCache
                 });
     }
 
-    public InternalTableIterator newIterator(FileMetaData file) throws IOException
+    public InternalTableIterator newIterator(FileMetaData file, ReadOptions options) throws IOException
     {
-        return newIterator(file.getNumber());
+        return newIterator(file.getNumber(), options);
     }
 
-    public InternalTableIterator newIterator(long number) throws IOException
+    public InternalTableIterator newIterator(long number, ReadOptions options) throws IOException
     {
         try (Table table = getTable(number)) { //same as release
-            return new InternalTableIterator(table.iterator()); //make its own retain
+            return new InternalTableIterator(table.iterator(options)); //make its own retain
         }
     }
 
-    public <T> T get(Slice key, FileMetaData fileMetaData, KeyValueFunction<T> resultBuilder)
+    public <T> T get(ReadOptions options, Slice key, FileMetaData fileMetaData, KeyValueFunction<T> resultBuilder)
     {
         try (Table table = getTable(fileMetaData.getNumber())) { //same as release
-            return table.internalGet(key, resultBuilder);
+            return table.internalGet(options, key, resultBuilder);
         }
         catch (Exception e) {
             throw new DBException(e);
@@ -164,7 +165,7 @@ public class TableCache
             table = Closeables.wrapResource(() -> {
                 final FilterPolicy filterPolicy = (FilterPolicy) options.filterPolicy();
                 return new Table(source, userComparator,
-                        options.verifyChecksums(), blockCache, filterPolicy);
+                        options.paranoidChecks(), blockCache, filterPolicy);
             }, source);
         }
 

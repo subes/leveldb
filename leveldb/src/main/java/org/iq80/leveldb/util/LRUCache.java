@@ -54,6 +54,12 @@ public final class LRUCache<K, V> implements ILRUCache<K, V>
     }
 
     @Override
+    public V getIfPresent(K key)
+    {
+        return cache.getIfPresent(key);
+    }
+
+    @Override
     public void invalidateAll()
     {
         cache.invalidateAll();

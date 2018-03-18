@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableList.Builder;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
+import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.util.MergingIterator;
 import org.iq80.leveldb.util.SafeListBuilder;
 import org.iq80.leveldb.util.Slice;
@@ -119,31 +120,31 @@ public class Version
     }
 
     @Override
-    public MergingIterator iterator() throws IOException
+    public MergingIterator iterator(ReadOptions options) throws IOException
     {
-        return new MergingIterator(getLevelIterators(), getInternalKeyComparator());
+        return new MergingIterator(getLevelIterators(options), getInternalKeyComparator());
     }
 
-    List<SeekingIterator<InternalKey, Slice>> getLevelIterators() throws IOException
+    List<SeekingIterator<InternalKey, Slice>> getLevelIterators(ReadOptions options) throws IOException
     {
         try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder();) {
             for (Level level : levels) {
                 if (!level.getFiles().isEmpty()) {
-                    builder.add(level.iterator());
+                    builder.add(level.iterator(options));
                 }
             }
             return builder.build();
         }
     }
 
-    public LookupResult get(LookupKey key, ReadStats readStats)
+    public LookupResult get(ReadOptions options, LookupKey key, ReadStats readStats)
     {
         // We can search level-by-level since entries never hop across
         // levels.  Therefore we are guaranteed that if we find data
         // in an smaller level, later levels are irrelevant.
         LookupResult lookupResult = null;
         for (Level level : levels) {
-            lookupResult = level.get(key, readStats);
+            lookupResult = level.get(options, key, readStats);
             if (lookupResult != null) {
                 break;
             }

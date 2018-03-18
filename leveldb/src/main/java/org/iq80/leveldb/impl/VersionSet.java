@@ -25,6 +25,8 @@ import com.google.common.collect.MapMaker;
 import com.google.common.collect.Maps;
 import com.google.common.io.Files;
 import org.iq80.leveldb.DBException;
+import org.iq80.leveldb.Options;
+import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.MergingIterator;
 import org.iq80.leveldb.util.SafeListBuilder;
@@ -74,6 +76,7 @@ public class VersionSet
     private long prevLogNumber;
 
     private final Map<Version, Object> activeVersions = new MapMaker().weakKeys().makeMap();
+    private final Options options;
     private final File databaseDir;
     private final TableCache tableCache;
     private final InternalKeyComparator internalKeyComparator;
@@ -82,9 +85,10 @@ public class VersionSet
     private LogWriter descriptorLog;
     private final Map<Integer, InternalKey> compactPointers = new TreeMap<>();
 
-    public VersionSet(File databaseDir, TableCache tableCache, InternalKeyComparator internalKeyComparator, Env env)
+    public VersionSet(Options options, File databaseDir, TableCache tableCache, InternalKeyComparator internalKeyComparator, Env env)
             throws IOException
     {
+        this.options = options;
         this.databaseDir = databaseDir;
         this.tableCache = tableCache;
         this.internalKeyComparator = internalKeyComparator;
@@ -194,13 +198,17 @@ public class VersionSet
     }
 
     @Override
-    public MergingIterator iterator() throws IOException
+    public MergingIterator iterator(ReadOptions options) throws IOException
     {
-        return current.iterator();
+        return current.iterator(options);
     }
 
     public MergingIterator makeInputIterator(Compaction c) throws IOException
     {
+        ReadOptions rOptions = new ReadOptions();
+        rOptions.verifyChecksums(this.options.paranoidChecks());
+        rOptions.fillCache(false);
+
         // Level-0 files have to be merged together.  For other levels,
         // we will make a concatenating iterator per level.
         // TODO(opt): use concatenating iterator for level-0 if there is no overlap
@@ -211,14 +219,14 @@ public class VersionSet
                     if (c.getLevel() + which == 0) {
                         try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder()) {
                             for (FileMetaData file : files) {
-                                builder.add(tableCache.newIterator(file));
+                                builder.add(tableCache.newIterator(file, rOptions));
                             }
                             list.add(new MergingIterator(builder.build(), internalKeyComparator));
                         }
                     }
                     else {
                         // Create concatenating iterator for the files from this level
-                        list.add(Level.createLevelConcatIterator(tableCache, files, internalKeyComparator));
+                        list.add(Level.createLevelConcatIterator(tableCache, files, internalKeyComparator, rOptions));
                     }
                 }
             }

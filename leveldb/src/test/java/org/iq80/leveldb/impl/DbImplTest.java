@@ -1622,7 +1622,7 @@ public class DbImplTest
         private DbStringWrapper(Options options, File databaseDir, Env env)
                 throws IOException
         {
-            this.options = options.verifyChecksums(true).createIfMissing(true).errorIfExists(true);
+            this.options = options.paranoidChecks(true).createIfMissing(true).errorIfExists(true);
             this.databaseDir = databaseDir;
             env1 = new CountingHandlesEnv(env);
             this.db = new DbImpl(options, databaseDir, env1);
@@ -1755,13 +1755,13 @@ public class DbImplTest
                 throws IOException
         {
             db.close();
-            db = new DbImpl(options.verifyChecksums(true).createIfMissing(false).errorIfExists(false), databaseDir, EnvImpl.createEnv());
+            db = new DbImpl(options.paranoidChecks(true).createIfMissing(false).errorIfExists(false), databaseDir, EnvImpl.createEnv());
         }
 
         private List<String> allEntriesFor(String userKey) throws IOException
         {
             ImmutableList.Builder<String> result = ImmutableList.builder();
-            try (DbIterator iterator = db.internalIterator()) {
+            try (DbIterator iterator = db.internalIterator(new ReadOptions())) {
                 while (iterator.hasNext()) {
                     Entry<InternalKey, Slice> entry = iterator.next();
                     String entryKey = entry.getKey().getUserKey().toString(UTF_8);

@@ -28,7 +28,6 @@ public class Options
     private int blockRestartInterval = 16;
     private int blockSize = 4 * 1024;
     private CompressionType compressionType = CompressionType.SNAPPY;
-    private boolean verifyChecksums = true;
     private boolean paranoidChecks;
     private DBComparator comparator;
     private Logger logger;
@@ -46,7 +45,6 @@ public class Options
         options1.blockRestartInterval = options.blockRestartInterval;
         options1.blockSize = options.blockSize;
         options1.compressionType = options.compressionType;
-        options1.verifyChecksums = options.verifyChecksums;
         options1.paranoidChecks = options.paranoidChecks;
         options1.comparator = options.comparator;
         options1.logger = options.logger;
@@ -137,17 +135,6 @@ public class Options
     {
         checkArgNotNull(compressionType, "compressionType");
         this.compressionType = compressionType;
-        return this;
-    }
-
-    public boolean verifyChecksums()
-    {
-        return verifyChecksums;
-    }
-
-    public Options verifyChecksums(boolean verifyChecksums)
-    {
-        this.verifyChecksums = verifyChecksums;
         return this;
     }
 

@@ -19,8 +19,10 @@ package org.iq80.leveldb.table;
 
 import com.google.common.base.Throwables;
 import org.iq80.leveldb.DBException;
+import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.impl.SeekingIterable;
 import org.iq80.leveldb.util.ILRUCache;
+import org.iq80.leveldb.util.PureJavaCrc32C;
 import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
@@ -39,6 +41,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
 import static java.util.Objects.requireNonNull;
 import static org.iq80.leveldb.CompressionType.SNAPPY;
 
@@ -49,7 +52,6 @@ public final class Table
     private static final AtomicLong ID_GENERATOR = new AtomicLong();
     private final long id = ID_GENERATOR.incrementAndGet();
     private final Comparator<Slice> comparator;
-    private final boolean verifyChecksums;
     private final Block indexBlock;
     private final BlockHandle metaindexBlockHandle;
     private final RandomInputFile source;
@@ -59,7 +61,7 @@ public final class Table
     //external user iterator are required to be closed
     private final AtomicInteger refCount = new AtomicInteger(1);
 
-    public Table(RandomInputFile source, Comparator<Slice> comparator, boolean verifyChecksum, ILRUCache<CacheKey, Slice> blockCache, final FilterPolicy filterPolicy)
+    public Table(RandomInputFile source, Comparator<Slice> comparator, boolean paranoidChecks, ILRUCache<CacheKey, Slice> blockCache, final FilterPolicy filterPolicy)
             throws IOException
     {
         this.source = source;
@@ -69,30 +71,29 @@ public final class Table
         checkArgument(size >= Footer.ENCODED_LENGTH, "File is corrupt: size must be at least %s bytes", Footer.ENCODED_LENGTH);
         requireNonNull(comparator, "comparator is null");
 
-        this.verifyChecksums = verifyChecksum;
         this.comparator = comparator;
         final ByteBuffer footerData = source.read(size - Footer.ENCODED_LENGTH, Footer.ENCODED_LENGTH);
 
         Footer footer = Footer.readFooter(Slices.avoidCopiedBuffer(footerData));
-        indexBlock = new Block(readRawBlock(footer.getIndexBlockHandle()), comparator); //no need for cache
+        indexBlock = new Block(readRawBlock(footer.getIndexBlockHandle(), paranoidChecks), comparator); //no need for cache
         metaindexBlockHandle = footer.getMetaindexBlockHandle();
-        this.filter = readMeta(filterPolicy);
+        this.filter = readMeta(filterPolicy, paranoidChecks);
 
     }
 
-    private FilterBlockReader readMeta(FilterPolicy filterPolicy) throws IOException
+    private FilterBlockReader readMeta(FilterPolicy filterPolicy, boolean verifyChecksum) throws IOException
     {
         assert refCount.get() > 0;
         if (filterPolicy == null) {
             return null;  // Do not need any metadata
         }
 
-        final Block meta = new Block(readRawBlock(metaindexBlockHandle), new BytewiseComparator());
+        final Block meta = new Block(readRawBlock(metaindexBlockHandle, verifyChecksum), new BytewiseComparator());
         try (BlockIterator iterator = meta.iterator()) {
             final Slice targetKey = new Slice(("filter." + filterPolicy.name()).getBytes(CHARSET));
             iterator.seek(targetKey);
             if (iterator.hasNext() && iterator.peek().getKey().equals(targetKey)) {
-                return readFilter(filterPolicy, iterator.next().getValue());
+                return readFilter(filterPolicy, iterator.next().getValue(), verifyChecksum);
             }
             else {
                 return null;
@@ -100,18 +101,18 @@ public final class Table
         }
     }
 
-    protected FilterBlockReader readFilter(FilterPolicy filterPolicy, Slice filterHandle) throws IOException
+    protected FilterBlockReader readFilter(FilterPolicy filterPolicy, Slice filterHandle, boolean verifyChecksum) throws IOException
     {
         assert refCount.get() > 0;
-        final Slice filterBlock = readRawBlock(BlockHandle.readBlockHandle(filterHandle.input()));
+        final Slice filterBlock = readRawBlock(BlockHandle.readBlockHandle(filterHandle.input()), verifyChecksum);
         return new FilterBlockReader(filterPolicy, filterBlock);
     }
 
     @Override
-    public TableIterator iterator()
+    public TableIterator iterator(ReadOptions options)
     {
         assert refCount.get() > 0;
-        return new TableIterator(this, indexBlock.iterator());
+        return new TableIterator(this, indexBlock.iterator(), options);
     }
 
     public FilterBlockReader getFilter()
@@ -120,13 +121,13 @@ public final class Table
         return filter;
     }
 
-    public Block openBlock(Slice blockEntry)
+    public Block openBlock(Slice blockEntry, ReadOptions options)
     {
         assert refCount.get() > 0;
         BlockHandle blockHandle = BlockHandle.readBlockHandle(blockEntry.input());
         Block dataBlock;
         try {
-            dataBlock = readBlock(blockHandle);
+            dataBlock = readBlock(blockHandle, options);
         }
         catch (IOException e) {
             throw new DBException(e);
@@ -134,12 +135,27 @@ public final class Table
         return dataBlock;
     }
 
-    private Block readBlock(BlockHandle blockHandle)
+    private Block readBlock(BlockHandle blockHandle, ReadOptions options)
             throws IOException
     {
         assert refCount.get() > 0;
         try {
-            final Slice rawBlock = blockCache == null ? readRawBlock(blockHandle) : blockCache.load(new CacheKey(id, blockHandle), () -> readRawBlock(blockHandle));
+            final Slice rawBlock;
+            if (blockCache == null) {
+                rawBlock = readRawBlock(blockHandle, options.verifyChecksums());
+            }
+            else if (!options.fillCache()) {
+                Slice ifPresent = blockCache.getIfPresent(new CacheKey(id, blockHandle));
+                if (ifPresent == null) {
+                    rawBlock = readRawBlock(blockHandle, options.verifyChecksums());
+                }
+                else {
+                    rawBlock = ifPresent;
+                }
+            }
+            else {
+                rawBlock = blockCache.load(new CacheKey(id, blockHandle), () -> readRawBlock(blockHandle, options.verifyChecksums()));
+            }
             return new Block(rawBlock, comparator);
         }
         catch (ExecutionException e) {
@@ -148,30 +164,33 @@ public final class Table
         }
     }
 
-    protected Slice readRawBlock(BlockHandle blockHandle)
+    protected Slice readRawBlock(BlockHandle blockHandle, boolean verifyChecksum)
             throws IOException
     {
         assert refCount.get() > 0;
         // read block trailer
-        final ByteBuffer content = source.read(blockHandle.getOffset(), blockHandle.getDataSize() + BlockTrailer.ENCODED_LENGTH);
-        content.mark().position(content.position() + blockHandle.getDataSize());
+        final ByteBuffer content = source.read(blockHandle.getOffset(), blockHandle.getFullBlockSize());
+        int limit = content.limit();
+        int position = content.position();
+        int trailerStart = position + blockHandle.getDataSize();
+        content.position(trailerStart);
         final BlockTrailer blockTrailer = BlockTrailer.readBlockTrailer(Slices.avoidCopiedBuffer(content));
 
-// todo re-enable crc check when ported to support direct buffers
-//        // only verify check sums if explicitly asked by the user
-//        if (verifyChecksums) {
-//            // checksum data and the compression type in the trailer
-//            PureJavaCrc32C checksum = new PureJavaCrc32C();
-//            checksum.update(data.getRawArray(), data.getRawOffset(), blockHandle.getDataSize() + 1);
-//            int actualCrc32c = checksum.getMaskedValue();
-//
-//            checkState(blockTrailer.getCrc32c() == actualCrc32c, "Block corrupted: checksum mismatch");
-//        }
+        // only verify check sums if explicitly asked by the user
+        if (verifyChecksum) {
+            // checksum data and the compression type in the trailer
+            PureJavaCrc32C checksum = new PureJavaCrc32C();
+            content.position(position).limit(trailerStart /*content*/ + 1/*type*/);
+            checksum.update(content);
+            int actualCrc32c = checksum.getMaskedValue();
+
+            checkState(blockTrailer.getCrc32c() == actualCrc32c, "Block corrupted: checksum mismatch");
+        }
 
         // decompress data
         Slice uncompressedData;
-        content.reset();
-        content.limit(content.limit() - BlockTrailer.ENCODED_LENGTH);
+        content.position(position);
+        content.limit(limit - BlockTrailer.ENCODED_LENGTH);
         if (blockTrailer.getCompressionType() == SNAPPY) {
             int uncompressedLength = uncompressedLength(content);
             final ByteBuffer uncompressedScratch = ByteBuffer.allocateDirect(uncompressedLength);
@@ -185,7 +204,7 @@ public final class Table
         return uncompressedData;
     }
 
-    public <T> T internalGet(Slice key, KeyValueFunction<T> keyValueFunction)
+    public <T> T internalGet(ReadOptions options, Slice key, KeyValueFunction<T> keyValueFunction)
     {
         assert refCount.get() > 0;
         try (final BlockIterator iterator = indexBlock.iterator()) {
@@ -197,7 +216,7 @@ public final class Table
                     return null;
                 }
                 else {
-                    try (BlockIterator iterator1 = openBlock(handleValue).iterator()) {
+                    try (BlockIterator iterator1 = openBlock(handleValue, options).iterator()) {
                         iterator1.seek(key);
                         if (iterator1.hasNext()) {
                             final BlockEntry next = iterator1.next();
@@ -243,6 +262,7 @@ public final class Table
 
     /**
      * Try to retain current instance.
+     *
      * @return {@code true} if table was successfully retained, {@code false} otherwise
      */
     public boolean retain()
@@ -272,7 +292,6 @@ public final class Table
         return "Table" +
                 "{source='" + source + '\'' +
                 ", comparator=" + comparator +
-                ", verifyChecksums=" + verifyChecksums +
                 '}';
     }
 

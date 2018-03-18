@@ -192,7 +192,7 @@ public class DbImpl
                 checkArgument(!options.errorIfExists(), "Database '%s' exists and the error if exists option is enabled", databaseDir);
             }
 
-            versions = new VersionSet(databaseDir, tableCache, internalKeyComparator, env);
+            versions = new VersionSet(options, databaseDir, tableCache, internalKeyComparator, env);
 
             // load  (and recover) current version
             versions.recover();
@@ -665,7 +665,7 @@ public class DbImpl
                 if (lookupResult == null) {
                     // Not in memTables; try live files in level order
                     readStats = new ReadStats();
-                    lookupResult = current.get(lookupKey, readStats);
+                    lookupResult = current.get(options, lookupKey, readStats);
                 }
 
                 // schedule compaction if necessary
@@ -908,7 +908,7 @@ public class DbImpl
     {
         mutex.lock();
         try {
-            DbIterator rawIterator = internalIterator();
+            DbIterator rawIterator = internalIterator(options);
 
             // filter out any entries not visible in our snapshot
             long snapshot = getSnapshot(options);
@@ -920,7 +920,7 @@ public class DbImpl
         }
     }
 
-    DbIterator internalIterator()
+    DbIterator internalIterator(ReadOptions options)
     {
         mutex.lock();
         try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder()) {
@@ -930,7 +930,7 @@ public class DbImpl
                 builder.add(immutableMemTable.iterator());
             }
             Version current = versions.getCurrent();
-            builder.addAll(current.getLevelIterators());
+            builder.addAll(current.getLevelIterators(options));
             current.retain();
             return new DbIterator(new MergingIterator(builder.build(), internalKeyComparator), () -> {
                 mutex.lock();
@@ -1123,7 +1123,7 @@ public class DbImpl
         this.stats[level].add(env.nowMicros() - startMicros, 0, meta.getFileSize());
     }
 
-    private FileMetaData buildTable(SeekingIterable<InternalKey, Slice> data, long fileNumber)
+    private FileMetaData buildTable(MemTable data, long fileNumber)
             throws IOException
     {
         File file = new File(databaseDir, Filename.tableFileName(fileNumber));
@@ -1159,7 +1159,7 @@ public class DbImpl
             FileMetaData fileMetaData = new FileMetaData(fileNumber, file.length(), smallest, largest);
 
             // verify table can be opened
-            tableCache.newIterator(fileMetaData).close();
+            tableCache.newIterator(fileMetaData, new ReadOptions()).close();
 
             return fileMetaData;
 
@@ -1344,7 +1344,7 @@ public class DbImpl
 
         if (currentEntries > 0) {
             // Verify that the table is usable
-            tableCache.newIterator(outputNumber).close();
+            tableCache.newIterator(outputNumber, new ReadOptions()).close();
         }
     }
 

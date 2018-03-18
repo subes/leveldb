@@ -46,7 +46,6 @@ public class OptionsTest
         op.blockRestartInterval(789);
         op.blockSize(345);
         op.compressionType(CompressionType.NONE);
-        op.verifyChecksums(false);
         op.paranoidChecks(true);
         op.comparator(comparator);
         op.logger(logger);
@@ -61,7 +60,6 @@ public class OptionsTest
         assertEquals(op2.blockRestartInterval(), 789);
         assertEquals(op2.blockSize(), 345);
         assertEquals(op2.compressionType(), CompressionType.NONE);
-        assertEquals(op2.verifyChecksums(), false);
         assertEquals(op2.paranoidChecks(), true);
         assertEquals(op2.comparator(), comparator);
         assertEquals(op2.logger(), logger);

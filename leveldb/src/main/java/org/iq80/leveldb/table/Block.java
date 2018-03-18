@@ -17,7 +17,6 @@
  */
 package org.iq80.leveldb.table;
 
-import org.iq80.leveldb.impl.SeekingIterable;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
 
@@ -62,7 +61,6 @@ import static org.iq80.leveldb.util.SizeOf.SIZE_OF_INT;
  * </table>
  */
 public class Block
-        implements SeekingIterable<Slice, Slice>
 {
     private final Slice block;
     private final Comparator<Slice> comparator;
@@ -107,7 +105,6 @@ public class Block
         return block.length();
     }
 
-    @Override
     public BlockIterator iterator()
     {
         return new BlockIterator(data, restartPositions, comparator);

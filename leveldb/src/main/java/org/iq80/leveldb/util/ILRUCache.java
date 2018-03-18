@@ -33,6 +33,14 @@ public interface ILRUCache<K, V>
     V load(final K key, Callable<V> loader) throws ExecutionException;
 
     /**
+     * Get a value from cache if present (already loaded)
+     *
+     * @param key cache key
+     * @return value if present, {@ode null} otherwise
+     */
+    V getIfPresent(K key);
+
+    /**
      * Discards all entries in the cache.
      */
     void invalidateAll();
