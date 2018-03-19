@@ -123,7 +123,7 @@ public class VersionSet
         }
     }
 
-    public void destroy()
+    public void release()
             throws IOException
     {
         if (descriptorLog != null) {

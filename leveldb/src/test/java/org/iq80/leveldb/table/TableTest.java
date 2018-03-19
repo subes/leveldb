@@ -75,13 +75,13 @@ public abstract class TableTest
     private File file;
 
     protected abstract Table createTable(File file, Comparator<Slice> comparator, boolean verifyChecksums, FilterPolicy filterPolicy)
-            throws IOException;
+            throws Exception;
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testEmptyFile()
             throws Exception
     {
-        createTable(file, new BytewiseComparator(), true, null);
+        createTable(file, new BytewiseComparator(), true, null).close();
     }
 
     @Test
@@ -957,56 +957,64 @@ public abstract class TableTest
     }
 
     private void tableTest(int blockSize, int blockRestartInterval, BlockEntry... entries)
-            throws IOException
+            throws Exception
     {
         tableTest(blockSize, blockRestartInterval, asList(entries));
     }
 
     private void tableTest(int blockSize, int blockRestartInterval, List<BlockEntry> entries)
-            throws IOException
+            throws Exception
     {
         reopenFile();
         Options options = new Options().blockSize(blockSize).blockRestartInterval(blockRestartInterval);
-        TableBuilder builder = new TableBuilder(options, UnbufferedWritableFile.open(file), new BytewiseComparator());
+        try (WritableFile writableFile = UnbufferedWritableFile.open(file)) {
+            TableBuilder builder = new TableBuilder(options, writableFile, new BytewiseComparator());
 
-        for (BlockEntry entry : entries) {
-            builder.add(entry);
-        }
-        builder.finish();
-
-        Table table = createTable(file, new BytewiseComparator(), true, null);
-
-        try (SeekingIterator<Slice, Slice> seekingIterator = table.iterator(new ReadOptions())) {
-            BlockHelper.assertSequence(seekingIterator, entries);
-
-            seekingIterator.seekToFirst();
-            BlockHelper.assertSequence(seekingIterator, entries);
-
-            long lastApproximateOffset = 0;
             for (BlockEntry entry : entries) {
-                List<BlockEntry> nextEntries = entries.subList(entries.indexOf(entry), entries.size());
-                seekingIterator.seek(entry.getKey());
-                BlockHelper.assertSequence(seekingIterator, nextEntries);
-
-                seekingIterator.seek(BlockHelper.before(entry));
-                BlockHelper.assertSequence(seekingIterator, nextEntries);
-
-                seekingIterator.seek(BlockHelper.after(entry));
-                BlockHelper.assertSequence(seekingIterator, nextEntries.subList(1, nextEntries.size()));
-
-                long approximateOffset = table.getApproximateOffsetOf(entry.getKey());
-                assertTrue(approximateOffset >= lastApproximateOffset);
-                lastApproximateOffset = approximateOffset;
+                builder.add(entry);
             }
-
-            Slice endKey = Slices.wrappedBuffer(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF});
-            seekingIterator.seek(endKey);
-            BlockHelper.assertSequence(seekingIterator, Collections.<BlockEntry>emptyList());
-
-            long approximateOffset = table.getApproximateOffsetOf(endKey);
-            assertTrue(approximateOffset >= lastApproximateOffset);
+            builder.finish();
         }
+        Table table = null;
+        try {
+            table = createTable(file, new BytewiseComparator(), true, null);
 
+            try (SeekingIterator<Slice, Slice> seekingIterator = table.iterator(new ReadOptions())) {
+                BlockHelper.assertSequence(seekingIterator, entries);
+
+                seekingIterator.seekToFirst();
+                BlockHelper.assertSequence(seekingIterator, entries);
+
+                long lastApproximateOffset = 0;
+                for (BlockEntry entry : entries) {
+                    List<BlockEntry> nextEntries = entries.subList(entries.indexOf(entry), entries.size());
+                    seekingIterator.seek(entry.getKey());
+                    BlockHelper.assertSequence(seekingIterator, nextEntries);
+
+                    seekingIterator.seek(BlockHelper.before(entry));
+                    BlockHelper.assertSequence(seekingIterator, nextEntries);
+
+                    seekingIterator.seek(BlockHelper.after(entry));
+                    BlockHelper.assertSequence(seekingIterator, nextEntries.subList(1, nextEntries.size()));
+
+                    long approximateOffset = table.getApproximateOffsetOf(entry.getKey());
+                    assertTrue(approximateOffset >= lastApproximateOffset);
+                    lastApproximateOffset = approximateOffset;
+                }
+
+                Slice endKey = Slices.wrappedBuffer(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF});
+                seekingIterator.seek(endKey);
+                BlockHelper.assertSequence(seekingIterator, Collections.<BlockEntry>emptyList());
+
+                long approximateOffset = table.getApproximateOffsetOf(endKey);
+                assertTrue(approximateOffset >= lastApproximateOffset);
+            }
+        }
+        finally {
+            if (table != null) {
+                table.close();
+            }
+        }
     }
 
     @BeforeMethod
@@ -1019,6 +1027,9 @@ public abstract class TableTest
     private void reopenFile()
             throws IOException
     {
+        if (file != null) {
+            file.delete();
+        }
         file = File.createTempFile("table", ".db");
         file.delete();
         com.google.common.io.Files.touch(file);

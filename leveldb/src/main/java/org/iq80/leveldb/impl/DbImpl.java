@@ -20,6 +20,7 @@ package org.iq80.leveldb.impl;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
 import com.google.common.collect.FluentIterable;
+import com.google.common.io.Closer;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DB;
@@ -179,10 +180,12 @@ public class DbImpl
         }
 
         mutex.lock();
+        Closer c = Closer.create();
+        boolean success = false;
         try {
             // lock the database dir
-            dbLock = new DbLock(new File(databaseDir, Filename.lockFileName()));
-
+            this.dbLock = new DbLock(new File(databaseDir, Filename.lockFileName()));
+            c.register(dbLock::release);
             // verify the "current" file
             File currentFile = new File(databaseDir, Filename.currentFileName());
             if (!currentFile.canRead()) {
@@ -192,8 +195,8 @@ public class DbImpl
                 checkArgument(!options.errorIfExists(), "Database '%s' exists and the error if exists option is enabled", databaseDir);
             }
 
-            versions = new VersionSet(options, databaseDir, tableCache, internalKeyComparator, env);
-
+            this.versions = new VersionSet(options, databaseDir, tableCache, internalKeyComparator, env);
+            c.register(versions::release);
             // load  (and recover) current version
             versions.recover();
 
@@ -236,6 +239,7 @@ public class DbImpl
             // open transaction log
             long logFileNumber = versions.getNextFileNumber();
             this.log = Logs.createLogWriter(new File(databaseDir, Filename.logFileName(logFileNumber)), logFileNumber, env);
+            c.register(log);
             edit.setLogNumber(log.getFileNumber());
 
             // apply recovered edits
@@ -246,8 +250,15 @@ public class DbImpl
 
             // schedule compactions
             maybeScheduleCompaction();
+            success = true;
+        }
+        catch (Throwable e) {
+            throw c.rethrow(e);
         }
         finally {
+            if (!success) {
+                c.close();
+            }
             mutex.unlock();
         }
     }
@@ -296,7 +307,7 @@ public class DbImpl
             Thread.currentThread().interrupt();
         }
         try {
-            versions.destroy();
+            versions.release();
         }
         catch (IOException ignored) {
         }

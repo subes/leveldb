@@ -17,12 +17,13 @@
  */
 package org.iq80.leveldb.table;
 
-import org.iq80.leveldb.util.UnbufferedRandomInputFile;
+import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.LRUCache;
+import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
+import org.iq80.leveldb.util.UnbufferedRandomInputFile;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.Comparator;
 
 public class UnbufferedRandomInputFileTableTest
@@ -30,8 +31,15 @@ public class UnbufferedRandomInputFileTableTest
 {
     @Override
     protected Table createTable(File file, Comparator<Slice> comparator, boolean verifyChecksums, FilterPolicy filterPolicy)
-            throws IOException
+            throws Exception
     {
-        return new Table(UnbufferedRandomInputFile.open(file), comparator, verifyChecksums, LRUCache.createCache(8 << 5, new BlockHandleSliceWeigher()), filterPolicy);
+        RandomInputFile open = UnbufferedRandomInputFile.open(file);
+        try {
+            return new Table(open, comparator, verifyChecksums, LRUCache.createCache(8 << 5, new BlockHandleSliceWeigher()), filterPolicy);
+        }
+        catch (Exception e) {
+            Closeables.closeQuietly(open);
+            throw e;
+        }
     }
 }

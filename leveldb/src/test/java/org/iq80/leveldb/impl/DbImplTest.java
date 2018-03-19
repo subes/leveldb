@@ -106,11 +106,11 @@ public class DbImplTest
     {
         options.maxOpenFiles(100);
         options.createIfMissing(true);
-        DbImpl db = new DbImpl(options, this.databaseDir, EnvImpl.createEnv());
+        DbStringWrapper db = new DbStringWrapper(options, this.databaseDir, EnvImpl.createEnv());
         Random random = new Random(301);
         for (int i = 0; i < 200000 * STRESS_FACTOR; i++) {
-            db.put(randomString(random, 64).getBytes(), new byte[] {0x01}, new WriteOptions().sync(false));
-            db.get(randomString(random, 64).getBytes());
+            db.put(randomString(random, 64), new String(new byte[] {0x01}, UTF_8), new WriteOptions().sync(false));
+            db.get(randomString(random, 64));
             if ((i % 50000) == 0 && i != 0) {
                 System.out.println(i + " rows written");
             }
@@ -124,7 +124,8 @@ public class DbImplTest
         options.maxOpenFiles(50);
         options.createIfMissing(true);
         ExecutorService ex = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 4);
-        try (DbImpl db = new DbImpl(options, this.databaseDir, EnvImpl.createEnv())) {
+        try {
+            DbStringWrapper db = new DbStringWrapper(options, this.databaseDir, EnvImpl.createEnv());
             final int numEntries = 1000000;
             final int growValueBy = 10;
             final CountDownLatch segmentsToPutEnd = new CountDownLatch(numEntries / 100);
@@ -142,7 +143,7 @@ public class DbImplTest
                         for (int k = 0; k < growValueBy; k += value.length) {
                             System.arraycopy(value, 0, bytes, k, value.length);
                         }
-                        db.put(value, bytes);
+                        db.db.put(value, bytes);
                         if (random.nextInt(100) < 2) {
                             Thread.yield();
                         }
@@ -159,7 +160,7 @@ public class DbImplTest
                 for (int k = 0; k < growValueBy; k += value.length) {
                     System.arraycopy(value, 0, bytes, k, value.length);
                 }
-                assertEquals(db.get(value), bytes);
+                assertEquals(db.db.get(value), bytes);
             }
         }
         finally {
@@ -172,11 +173,11 @@ public class DbImplTest
             throws Exception
     {
         options.createIfMissing(true);
-        DbImpl db = new DbImpl(options, databaseDir, EnvImpl.createEnv());
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir, EnvImpl.createEnv());
         for (int index = 0; index < 5000000; index++) {
             String key = "Key LOOOOOOOOOOOOOOOOOONG KEY " + index;
             String value = "This is element " + index + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABZASDFASDKLFJASDFKJSDFLKSDJFLKJSDHFLKJHSDJFSDFHJASDFLKJSDF";
-            db.put(key.getBytes(UTF_8), value.getBytes(UTF_8));
+            db.put(key, value);
         }
     }
 
@@ -206,7 +207,7 @@ public class DbImplTest
         db.close();
 
         // reopen db
-        new Iq80DBFactory().open(databaseDir, options);
+        new Iq80DBFactory().open(databaseDir, options).close();
     }
 
     @Test(dataProvider = "options")
@@ -1471,7 +1472,8 @@ public class DbImplTest
             db.close();
         }
         opened.clear();
-        FileUtils.deleteRecursively(databaseDir);
+        boolean b = FileUtils.deleteRecursively(databaseDir);
+        assertFalse(!b && databaseDir.exists(), "Dir should be possible to delete! All files should have been released.");
     }
 
     private void assertBetween(long actual, int smallest, int greatest)
