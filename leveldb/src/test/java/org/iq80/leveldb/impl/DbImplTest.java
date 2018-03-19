@@ -92,16 +92,16 @@ public class DbImplTest
     public Object[][] optionsProvider()
     {
         return new Object[][] {
-                {"Default", new Options()},
-                //{"Reuse", new Options().reuseLog(true)},
-                {"Bloom Filter", new Options().filterPolicy(new BloomFilterPolicy(10))},
-                {"No Compression", new Options().compressionType(CompressionType.NONE)},
-                {"Snappy", new Options().compressionType(CompressionType.SNAPPY)}
+                {new OptionsDesc("Default")},
+                //new OptionsDesc("Reuse").reuseLog(true)},
+                {new OptionsDesc("Bloom Filter").filterPolicy(new BloomFilterPolicy(10))},
+                {new OptionsDesc("No Compression").compressionType(CompressionType.NONE)},
+                {new OptionsDesc("Snappy").compressionType(CompressionType.SNAPPY)}
         };
     }
 
     @Test(dataProvider = "options")
-    public void testBackgroundCompaction(final String desc, final Options options)
+    public void testBackgroundCompaction(final Options options)
             throws Exception
     {
         options.maxOpenFiles(100);
@@ -169,7 +169,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testCompactionsOnBigDataSet(final String desc, final Options options)
+    public void testCompactionsOnBigDataSet(final Options options)
             throws Exception
     {
         options.createIfMissing(true);
@@ -182,7 +182,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testEmpty(final String desc, final Options options)
+    public void testEmpty(final Options options)
             throws Exception
     {
         File databaseDir = this.databaseDir;
@@ -191,7 +191,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testEmptyBatch(final String desc, final Options options)
+    public void testEmptyBatch(final Options options)
             throws Exception
     {
         // open new db
@@ -211,7 +211,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testReadWrite(final String desc, final Options options)
+    public void testReadWrite(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -224,7 +224,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testPutDeleteGet(final String desc, final Options options)
+    public void testPutDeleteGet(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -237,7 +237,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testGetFromImmutableLayer(final String desc, final Options options)
+    public void testGetFromImmutableLayer(final Options options)
             throws Exception
     {
         // create db with small write buffer
@@ -258,7 +258,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testGetFromVersions(final String desc, final Options options)
+    public void testGetFromVersions(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -268,7 +268,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testGetSnapshot(final String desc, final Options options)
+    public void testGetSnapshot(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -290,7 +290,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testGetLevel0Ordering(final String desc, final Options options)
+    public void testGetLevel0Ordering(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -308,7 +308,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testGetOrderedByLevels(final String desc, final Options options)
+    public void testGetOrderedByLevels(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -322,7 +322,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testGetPicksCorrectFile(final String desc, final Options options)
+    public void testGetPicksCorrectFile(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -342,7 +342,7 @@ public class DbImplTest
     //TODO implement GetEncountersEmptyLevel
 
     @Test(dataProvider = "options")
-    public void testEmptyIterator(final String desc, final Options options)
+    public void testEmptyIterator(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -357,7 +357,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testIteratorSingle(final String desc, final Options options)
+    public void testIteratorSingle(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -369,7 +369,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testIteratorMultiple(final String desc, final Options options)
+    public void testIteratorMultiple(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -403,7 +403,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testIterSmallAndLargeMix(final String desc, final Options options)
+    public void testIterSmallAndLargeMix(final Options options)
             throws IOException
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -424,7 +424,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testIterMultiWithDelete(final String desc, final Options options)
+    public void testIterMultiWithDelete(final Options options)
             throws IOException
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -442,7 +442,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testRecover(final String desc, final Options options)
+    public void testRecover(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -467,7 +467,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testRecoveryWithEmptyLog(final String desc, final Options options)
+    public void testRecoveryWithEmptyLog(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -481,7 +481,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testRecoverDuringMemtableCompaction(final String desc, final Options options)
+    public void testRecoverDuringMemtableCompaction(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options.writeBufferSize(1000000), databaseDir);
@@ -501,7 +501,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testMinorCompactionsHappen(final String desc, final Options options)
+    public void testMinorCompactionsHappen(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options.writeBufferSize(10000), databaseDir);
@@ -531,7 +531,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testRecoverWithLargeLog(final String desc, final Options options)
+    public void testRecoverWithLargeLog(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -551,7 +551,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testCompactionsGenerateMultipleFiles(final String desc, final Options options)
+    public void testCompactionsGenerateMultipleFiles(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options.writeBufferSize(100000000), databaseDir);
@@ -581,7 +581,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testRepeatedWritesToSameKey(final String desc, final Options options)
+    public void testRepeatedWritesToSameKey(final Options options)
             throws Exception
     {
         options.writeBufferSize(100000);
@@ -602,7 +602,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testSparseMerge(final String desc, final Options options)
+    public void testSparseMerge(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(new Options().compressionType(NONE), databaseDir);
@@ -721,7 +721,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testIteratorPinsRef(final String desc, final Options options)
+    public void testIteratorPinsRef(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -740,7 +740,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testSnapshot(final String desc, final Options options)
+    public void testSnapshot(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -772,7 +772,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testHiddenValuesAreRemoved(final String desc, final Options options)
+    public void testHiddenValuesAreRemoved(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -874,7 +874,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testDeletionMarkers1(final String desc, final Options options)
+    public void testDeletionMarkers1(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -918,7 +918,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testDeletionMarkers2(final String desc, final Options options)
+    public void testDeletionMarkers2(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -953,7 +953,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testEmptyDb(final String desc, final Options options)
+    public void testEmptyDb(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -961,7 +961,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testSingleEntrySingle(final String desc, final Options options)
+    public void testSingleEntrySingle(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -969,7 +969,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testMultipleEntries(final String desc, final Options options)
+    public void testMultipleEntries(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -986,7 +986,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testMultiPassMultipleEntries(final String desc, final Options options)
+    public void testMultiPassMultipleEntries(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -1034,7 +1034,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testCustomComparator(final String desc, final Options options)
+    public void testCustomComparator(final Options options)
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options.comparator(new LexicographicalReverseDBComparator()), databaseDir);
@@ -1064,7 +1064,7 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
-    public void testManualCompaction(final String desc, final Options options) throws Exception
+    public void testManualCompaction(final Options options) throws Exception
     {
         assertEquals(DbConstants.MAX_MEM_COMPACT_LEVEL, 2);
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
@@ -1385,7 +1385,7 @@ public class DbImplTest
      * Beside current test, at the end every {@link DbImplTest} test case, close is asserted for opened file handles.
      */
     @Test(dataProvider = "options")
-    public void testFileHandlesClosed(final String desc, final Options options) throws Exception
+    public void testFileHandlesClosed(final Options options) throws Exception
     {
         assertTrue(options.maxOpenFiles() > 2); //for this test to work
         DbStringWrapper db = new DbStringWrapper(options, databaseDir, EnvImpl.createEnv());
@@ -2016,6 +2016,22 @@ public class DbImplTest
             {
                 writableFile.close();
             }
+        }
+    }
+
+    static class OptionsDesc extends Options
+    {
+        private String desc;
+
+        OptionsDesc(String desc)
+        {
+            this.desc = desc;
+        }
+
+        @Override
+        public String toString()
+        {
+            return "Options{" + desc + '}';
         }
     }
 }
