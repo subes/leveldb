@@ -140,4 +140,12 @@ public class InternalKey
     {
         return data.slice(0, data.length() - SIZE_OF_LONG);
     }
+
+    /**
+     * Return the size in bytes used by current internal key
+     */
+    public int size()
+    {
+        return userKey.length() + SIZE_OF_LONG;
+    }
 }

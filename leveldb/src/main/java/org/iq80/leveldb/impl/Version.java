@@ -286,4 +286,26 @@ public class Version
     {
         return retained.get() <= 0;
     }
+
+    public boolean recordReadSample(InternalKey internalKey)
+    {
+        // Holds first matching file
+        ReadStats readStats = null;
+        for (int level = 0; level < NUM_LEVELS; ++level) {
+            for (FileMetaData file : levels.get(level).getFilesForKey(internalKey.getUserKey(), internalKey)) {
+                if (readStats != null) {
+                    // Must have at least two matches since we want to merge across
+                    // files. But what if we have a single file that contains many
+                    // overwrites and deletions?  Should we have another mechanism for
+                    // finding such files?
+                    return updateStats(readStats);
+                }
+                else {
+                    // Remember first match
+                    readStats = new ReadStats(level, file);
+                }
+            }
+        }
+        return false;
+    }
 }

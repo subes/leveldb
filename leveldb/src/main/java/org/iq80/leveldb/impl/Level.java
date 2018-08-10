@@ -28,6 +28,7 @@ import org.iq80.leveldb.util.Slice;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -40,7 +41,7 @@ import static org.iq80.leveldb.impl.ValueType.VALUE;
 public class Level
         implements SeekingIterable<InternalKey, Slice>
 {
-    private static final Comparator<FileMetaData> NEWEST_FIRST = (fileMetaData, fileMetaData1) -> (int) (fileMetaData1.getNumber() - fileMetaData.getNumber());
+    public static final Comparator<FileMetaData> NEWEST_FIRST = (fileMetaData, fileMetaData1) -> (int) (fileMetaData1.getNumber() - fileMetaData.getNumber());
     private final int levelNumber;
     private final TableCache tableCache;
     private final InternalKeyComparator internalKeyComparator;
@@ -96,36 +97,9 @@ public class Level
             return null;
         }
 
-        List<FileMetaData> fileMetaDataList = new ArrayList<>(files.size());
-        if (levelNumber == 0) {
-            for (FileMetaData fileMetaData : files) {
-                if (internalKeyComparator.getUserComparator().compare(key.getUserKey(), fileMetaData.getSmallest().getUserKey()) >= 0 &&
-                        internalKeyComparator.getUserComparator().compare(key.getUserKey(), fileMetaData.getLargest().getUserKey()) <= 0) {
-                    fileMetaDataList.add(fileMetaData);
-                }
-            }
-            if (fileMetaDataList.isEmpty()) {
-                return null;
-            }
-            fileMetaDataList.sort(NEWEST_FIRST);
-        }
-        else {
-            // Binary search to find earliest index whose largest key >= ikey.
-            int index = findFile(key.getInternalKey());
-
-            // did we find any files that could contain the key?
-            if (index >= files.size()) {
-                return null;
-            }
-
-            // check if the smallest user key in the file is less than the target user key
-            FileMetaData fileMetaData = files.get(index);
-            if (internalKeyComparator.getUserComparator().compare(key.getUserKey(), fileMetaData.getSmallest().getUserKey()) < 0) {
-                return null;
-            }
-
-            // search this file
-            fileMetaDataList.add(fileMetaData);
+        List<FileMetaData> fileMetaDataList = getFilesForKey(key.getUserKey(), key.getInternalKey());
+        if (fileMetaDataList.isEmpty()) {
+            return null;
         }
 
         FileMetaData lastFileRead = null;
@@ -148,6 +122,43 @@ public class Level
         }
 
         return null;
+    }
+
+    public List<FileMetaData> getFilesForKey(Slice userKey, InternalKey internalKey)
+    {
+        final UserComparator userComparator = internalKeyComparator.getUserComparator();
+        if (levelNumber == 0) {
+            final List<FileMetaData> fileMetaDataList = new ArrayList<>(files.size());
+            for (FileMetaData fileMetaData : files) {
+                if (userComparator.compare(userKey, fileMetaData.getSmallest().getUserKey()) >= 0 &&
+                        userComparator.compare(userKey, fileMetaData.getLargest().getUserKey()) <= 0) {
+                    fileMetaDataList.add(fileMetaData);
+                }
+            }
+            if (fileMetaDataList.isEmpty()) {
+                return Collections.emptyList();
+            }
+            fileMetaDataList.sort(NEWEST_FIRST);
+            return fileMetaDataList;
+        }
+        else {
+            // Binary search to find earliest index whose largest key >= ikey.
+            int index = findFile(internalKey);
+
+            // did we find any files that could contain the key?
+            if (index >= files.size()) {
+                return Collections.emptyList();
+            }
+
+            // check if the smallest user key in the file is less than the target user key
+            FileMetaData fileMetaData = files.get(index);
+            if (userComparator.compare(userKey, fileMetaData.getSmallest().getUserKey()) < 0) {
+                return Collections.emptyList();
+            }
+
+            // search this file
+            return Collections.singletonList(fileMetaData);
+        }
     }
 
     public boolean someFileOverlapsRange(boolean disjointSortedFiles, Slice smallestUserKey, Slice largestUserKey)

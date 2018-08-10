@@ -22,6 +22,16 @@ public class ReadStats
     private int seekFileLevel = -1;
     private FileMetaData seekFile;
 
+    ReadStats()
+    {
+    }
+
+    ReadStats(int seekFileLevel, FileMetaData seekFile)
+    {
+        this.seekFileLevel = seekFileLevel;
+        this.seekFile = seekFile;
+    }
+
     public void clear()
     {
         seekFileLevel = -1;

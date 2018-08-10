@@ -60,6 +60,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -923,7 +924,7 @@ public class DbImpl
 
             // filter out any entries not visible in our snapshot
             long snapshot = getSnapshot(options);
-            SnapshotSeekingIterator snapshotIterator = new SnapshotSeekingIterator(rawIterator, snapshot, internalKeyComparator.getUserComparator());
+            SnapshotSeekingIterator snapshotIterator = new SnapshotSeekingIterator(rawIterator, snapshot, internalKeyComparator.getUserComparator(), new Random(), this);
             return new SeekingIteratorAdapter(snapshotIterator);
         }
         finally {
@@ -955,6 +956,24 @@ public class DbImpl
         }
         catch (IOException e) {
             throw new DBException(e);
+        }
+        finally {
+            mutex.unlock();
+        }
+    }
+
+    /**
+     * Record a sample of bytes read at the specified internal key.
+     * Samples are taken approximately once every config::READ_BYTES_PERIOD
+     * bytes.
+     */
+    void recordReadSample(InternalKey key)
+    {
+        mutex.lock();
+        try {
+            if (versions.getCurrent().recordReadSample(key)) {
+                maybeScheduleCompaction();
+            }
         }
         finally {
             mutex.unlock();

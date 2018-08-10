@@ -25,6 +25,7 @@ import org.iq80.leveldb.util.Slice;
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.Map.Entry;
+import java.util.Random;
 
 public final class SnapshotSeekingIterator
         extends AbstractSeekingIterator<Slice, Slice> implements AutoCloseable
@@ -32,12 +33,18 @@ public final class SnapshotSeekingIterator
     private final DbIterator iterator;
     private final long sequence;
     private final Comparator<Slice> userComparator;
+    private final Random r;
+    private final DbImpl db;
+    private int bytesCounter;
 
-    public SnapshotSeekingIterator(DbIterator iterator, long sequence, Comparator<Slice> userComparator)
+    public SnapshotSeekingIterator(DbIterator iterator, long sequence, Comparator<Slice> userComparator, Random r, DbImpl db)
     {
         this.iterator = iterator;
         this.sequence = sequence;
         this.userComparator = userComparator;
+        this.r = r;
+        this.db = db;
+        this.bytesCounter = getRandomPeriod(); //use this.r
     }
 
     @Override
@@ -92,7 +99,7 @@ public final class SnapshotSeekingIterator
         }
         //todo optimize algorithm. we should not do early load when called from #seekX(y)
         while (iterator.hasNext()) {
-            Entry<InternalKey, Slice> next = iterator.next();
+            Entry<InternalKey, Slice> next = record(iterator.next());
             InternalKey key = next.getKey();
             // skip entries created after our snapshot
             if (key.getSequenceNumber() > sequence) {
@@ -105,7 +112,7 @@ public final class SnapshotSeekingIterator
                         break; //handled by next loop
                     }
                     else if (peek.getKey().getValueType() == ValueType.VALUE && userComparator.compare(key.getUserKey(), peek.getKey().getUserKey()) == 0) {
-                        iterator.next(); // Entry hidden
+                        record(iterator.next()); // Entry hidden
                     }
                     else {
                         break; //different key
@@ -116,7 +123,7 @@ public final class SnapshotSeekingIterator
                 while (iterator.hasNext()) {
                     Entry<InternalKey, Slice> peek = iterator.peek();
                     if (peek.getKey().getValueType() == ValueType.VALUE && userComparator.compare(key.getUserKey(), peek.getKey().getUserKey()) == 0) {
-                        iterator.next(); // Entry hidden
+                        record(iterator.next()); // Entry hidden
                     }
                     else {
                         this.next = next;
@@ -127,6 +134,25 @@ public final class SnapshotSeekingIterator
                 return;
             }
         }
+    }
+
+    private Entry<InternalKey, Slice> record(Entry<InternalKey, Slice> next)
+    {
+        int n = next.getKey().size() + next.getValue().length();
+        bytesCounter -= n;
+        while (bytesCounter < 0) {
+            bytesCounter += getRandomPeriod();
+            db.recordReadSample(next.getKey());
+        }
+        return next;
+    }
+
+    /**
+     * Pick next gap with average value of {@link DbConstants#READ_BYTES_PERIOD}.
+     */
+    private int getRandomPeriod()
+    {
+        return r.nextInt(2 * DbConstants.READ_BYTES_PERIOD);
     }
 
     @Override

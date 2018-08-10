@@ -54,6 +54,11 @@ public final class DbConstants
      */
     public static final int MAX_MEM_COMPACT_LEVEL = 2;
 
+    /**
+     * Approximate gap in bytes between samples of data read during iteration.
+     */
+    public static final int READ_BYTES_PERIOD = 1048576;
+
     private DbConstants()
     {
     }
