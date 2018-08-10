@@ -18,6 +18,7 @@
 package org.iq80.leveldb.impl;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
@@ -642,6 +643,7 @@ public class VersionSet
 
     List<FileMetaData> getOverlappingInputs(int level, InternalKey begin, InternalKey end)
     {
+        Preconditions.checkArgument(level >= 0 && level <= DbConstants.NUM_LEVELS, "Invalid level value %s", level);
         List<FileMetaData> inputs = new ArrayList<>();
         Slice userBegin = begin == null ? null : begin.getUserKey();
         Slice userEnd = end == null ? null : end.getUserKey();

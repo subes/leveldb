@@ -164,9 +164,12 @@ public class Version
                 if (overlapInLevel(level + 1, smallestUserKey, largestUserKey)) {
                     break;
                 }
-                long sum = Compaction.totalFileSize(versionSet.getOverlappingInputs(level + 2, start, limit));
-                if (sum > MAX_GRAND_PARENT_OVERLAP_BYTES) {
-                    break;
+                if (level + 2 < DbConstants.NUM_LEVELS) {
+                    // Check that file does not overlap too many grandparent bytes.
+                    long sum = Compaction.totalFileSize(versionSet.getOverlappingInputs(level + 2, start, limit));
+                    if (sum > MAX_GRAND_PARENT_OVERLAP_BYTES) {
+                        break;
+                    }
                 }
                 level++;
             }
