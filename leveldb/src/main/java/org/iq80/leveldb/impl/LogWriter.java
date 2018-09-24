@@ -55,9 +55,20 @@ public class LogWriter
         this.writableFile = file;
     }
 
+    private LogWriter(long fileNumber, WritableFile file, long destinationLength)
+    {
+        this(fileNumber, file);
+        this.blockOffset = (int) (destinationLength % LogConstants.BLOCK_SIZE);
+    }
+
     public static LogWriter createWriter(long fileNumber, WritableFile writableFile)
     {
         return new LogWriter(fileNumber, writableFile);
+    }
+
+    public static LogWriter createWriter(long fileNumber, WritableFile writableFile, long destinationLength)
+    {
+        return new LogWriter(fileNumber, writableFile, destinationLength);
     }
 
     @Override

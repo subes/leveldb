@@ -293,11 +293,14 @@ public class VersionSet
             // Initialize new descriptor log file if necessary by creating
             // a temporary file that contains a snapshot of the current version.
             if (descriptorLog == null) {
+                // No reason to unlock *mu here since we only hit this path in the
+                // first call to LogAndApply (when opening the database).
                 edit.setNextFileNumber(nextFileNumber.get());
                 descriptorLog = Logs.createLogWriter(new File(databaseDir, Filename.descriptorFileName(mFileNumber)), mFileNumber, env);
                 writeSnapshot(descriptorLog);
                 createdNewManifest = true;
             }
+            // Unlock during expensive MANIFEST log write
             mutex.unlock();
             try {
                 // Write new record to MANIFEST log
@@ -348,21 +351,25 @@ public class VersionSet
         log.addRecord(record, false);
     }
 
-    public void recover()
+    /**
+     * @return {@code true} if manifest should be saved, {@code false} otherwise
+     */
+    public boolean recover()
             throws IOException
     {
         // Read "CURRENT" file, which contains a pointer to the current manifest file
         File currentFile = new File(databaseDir, Filename.currentFileName());
         checkState(currentFile.exists(), "CURRENT file does not exist");
 
-        String currentName = Files.toString(currentFile, UTF_8);
-        if (currentName.isEmpty() || currentName.charAt(currentName.length() - 1) != '\n') {
+        String descriptorName = Files.toString(currentFile, UTF_8);
+        if (descriptorName.isEmpty() || descriptorName.charAt(descriptorName.length() - 1) != '\n') {
             throw new IllegalStateException("CURRENT file does not end with newline");
         }
-        currentName = currentName.substring(0, currentName.length() - 1);
+        descriptorName = descriptorName.substring(0, descriptorName.length() - 1);
 
         // open file channel
-        try (SequentialFile in = env.newSequentialFile(new File(databaseDir, currentName))) {
+        final File descriptorFile = new File(databaseDir, descriptorName);
+        try (SequentialFile in = env.newSequentialFile(descriptorFile)) {
             // read log edit log
             Long nextFileNumber = null;
             Long lastSequence = null;
@@ -376,7 +383,6 @@ public class VersionSet
                 VersionEdit edit = new VersionEdit(record);
 
                 // verify comparator
-                // todo implement user comparator
                 String editComparator = edit.getComparatorName();
                 String userComparator = internalKeyComparator.name();
                 checkArgument(editComparator == null || editComparator.equals(userComparator),
@@ -409,6 +415,8 @@ public class VersionSet
             if (prevLogNumber == null) {
                 prevLogNumber = 0L;
             }
+            markFileNumberUsed(prevLogNumber);
+            markFileNumberUsed(logNumber);
 
             Version newVersion = new Version(this);
             builder.saveTo(newVersion);
@@ -423,7 +431,51 @@ public class VersionSet
             this.lastSequence = lastSequence;
             this.logNumber = logNumber;
             this.prevLogNumber = prevLogNumber;
+            if (reuseManifest(descriptorFile)) {
+                // No need to save manifest
+                return false;
+            }
+            else {
+                return true;
+            }
         }
+    }
+
+    void markFileNumberUsed(long number)
+    {
+        long current;
+        while ((current = nextFileNumber.get()) <= number) {
+            if (nextFileNumber.compareAndSet(current, number + 1)) {
+                break;
+            }
+        }
+    }
+
+    private boolean reuseManifest(File currentFile)
+    {
+        if (!options.reuseLogs()) {
+            return false;
+        }
+        Filename.FileInfo fileInfo = Filename.parseFileName(currentFile);
+        if (fileInfo == null ||
+                fileInfo.getFileType() != Filename.FileType.DESCRIPTOR ||
+                // Make new compacted MANIFEST if old one is too big
+                currentFile.length() >= TARGET_FILE_SIZE) {
+            return false;
+        }
+        Preconditions.checkState(descriptorLog == null, "descriptor log should be null");
+        try {
+            descriptorLog = LogWriter.createWriter(fileInfo.getFileNumber(), env.newAppendableFile(currentFile));
+        }
+        catch (Exception ignore) {
+            assert descriptorLog == null;
+            //log me
+            return false;
+        }
+
+        //Log(options_->info_log, "Reusing MANIFEST %s\n", dscname.c_str());
+        this.manifestFileNumber = fileInfo.getFileNumber();
+        return true;
     }
 
     private void finalizeVersion(Version version)

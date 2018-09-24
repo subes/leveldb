@@ -51,6 +51,7 @@ public class OptionsTest
         op.logger(logger);
         op.cacheSize(678);
         op.filterPolicy(filterPolicy);
+        op.reuseLogs(true);
         Options op2 = Options.fromOptions(op);
 
         assertEquals(op2.createIfMissing(), false);
@@ -65,6 +66,7 @@ public class OptionsTest
         assertEquals(op2.logger(), logger);
         assertEquals(op2.cacheSize(), 678);
         assertEquals(op2.filterPolicy(), filterPolicy);
+        assertEquals(op2.reuseLogs(), true);
     }
 
     private static class MyDBComparator implements DBComparator

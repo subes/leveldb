@@ -19,6 +19,7 @@ package org.iq80.leveldb.impl;
 
 import org.iq80.leveldb.util.PureJavaCrc32C;
 import org.iq80.leveldb.util.Slice;
+import org.iq80.leveldb.util.WritableFile;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,6 +33,11 @@ public final class Logs
     public static LogWriter createLogWriter(File file, long fileNumber, Env env) throws IOException
     {
         return LogWriter.createWriter(fileNumber, env.newWritableFile(file));
+    }
+
+    public static LogWriter createLogWriter(long fileNumber, WritableFile writableFile, long destinationLength) throws IOException
+    {
+        return LogWriter.createWriter(fileNumber, writableFile, destinationLength);
     }
 
     public static int getChunkChecksum(int chunkTypeId, Slice slice)

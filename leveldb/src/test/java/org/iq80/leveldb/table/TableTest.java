@@ -967,7 +967,7 @@ public abstract class TableTest
     {
         reopenFile();
         Options options = new Options().blockSize(blockSize).blockRestartInterval(blockRestartInterval);
-        try (WritableFile writableFile = UnbufferedWritableFile.open(file)) {
+        try (WritableFile writableFile = UnbufferedWritableFile.open(file, false)) {
             TableBuilder builder = new TableBuilder(options, writableFile, new BytewiseComparator());
 
             for (BlockEntry entry : entries) {

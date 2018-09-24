@@ -91,13 +91,13 @@ public class EnvImpl implements Env
                 throw e;
             }
         }
-        return UnbufferedWritableFile.open(file);
+        return UnbufferedWritableFile.open(file, false);
     }
 
     @Override
     public WritableFile newAppendableFile(File file) throws IOException
     {
-        return UnbufferedWritableFile.open(file);
+        return UnbufferedWritableFile.open(file, true);
     }
 
     private static class DelegateRandomInputFile implements RandomInputFile

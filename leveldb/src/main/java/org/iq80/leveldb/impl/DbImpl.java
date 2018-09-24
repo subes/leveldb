@@ -18,6 +18,7 @@
 package org.iq80.leveldb.impl;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.collect.FluentIterable;
 import com.google.common.io.Closer;
@@ -57,6 +58,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
@@ -152,7 +154,6 @@ public class DbImpl
             userComparator = new BytewiseComparator();
         }
         internalKeyComparator = new InternalKeyComparator(userComparator);
-        memTable = new MemTable(internalKeyComparator);
         immutableMemTable = null;
 
         ThreadFactory compactionThreadFactory = new ThreadFactoryBuilder()
@@ -187,10 +188,12 @@ public class DbImpl
             // lock the database dir
             this.dbLock = new DbLock(new File(databaseDir, Filename.lockFileName()));
             c.register(dbLock::release);
+            //<editor-fold desc="Recover">
             // verify the "current" file
             File currentFile = new File(databaseDir, Filename.currentFileName());
             if (!currentFile.canRead()) {
                 checkArgument(options.createIfMissing(), "Database '%s' does not exist and the create if missing option is disabled", databaseDir);
+                /** @see VersionSet#initializeIfNeeded() newDB() **/
             }
             else {
                 checkArgument(!options.errorIfExists(), "Database '%s' exists and the error if exists option is enabled", databaseDir);
@@ -199,7 +202,7 @@ public class DbImpl
             this.versions = new VersionSet(options, databaseDir, tableCache, internalKeyComparator, env);
             c.register(versions::release);
             // load  (and recover) current version
-            versions.recover();
+            boolean saveManifest = versions.recover();
 
             // Recover from all newer log files than the ones named in the
             // descriptor (new log files may have been added by the previous
@@ -230,21 +233,37 @@ public class DbImpl
             // Recover in the order in which the logs were generated
             VersionEdit edit = new VersionEdit();
             Collections.sort(logs);
-            for (Long fileNumber : logs) {
-                long maxSequence = recoverLogFile(fileNumber, edit);
-                if (versions.getLastSequence() < maxSequence) {
-                    versions.setLastSequence(maxSequence);
+            for (Iterator<Long> iterator = logs.iterator(); iterator.hasNext(); ) {
+                Long fileNumber = iterator.next();
+                RecoverResult result = recoverLogFile(fileNumber, !iterator.hasNext(), edit);
+                saveManifest |= result.saveManifest;
+
+                // The previous incarnation may not have written any MANIFEST
+                // records after allocating this log number.  So we manually
+                // update the file number allocation counter in VersionSet.
+                this.versions.markFileNumberUsed(fileNumber);
+
+                if (versions.getLastSequence() < result.maxSequence) {
+                    versions.setLastSequence(result.maxSequence);
                 }
             }
+            //</editor-fold>
 
             // open transaction log
-            long logFileNumber = versions.getNextFileNumber();
-            this.log = Logs.createLogWriter(new File(databaseDir, Filename.logFileName(logFileNumber)), logFileNumber, env);
-            c.register(log);
-            edit.setLogNumber(log.getFileNumber());
+            if (memTable == null) {
+                long logFileNumber = versions.getNextFileNumber();
+                this.log = Logs.createLogWriter(new File(databaseDir, Filename.logFileName(logFileNumber)), logFileNumber, env);
+                c.register(log);
+                edit.setLogNumber(log.getFileNumber());
+                memTable = new MemTable(internalKeyComparator);
+            }
 
-            // apply recovered edits
-            versions.logAndApply(edit, mutex);
+            if (saveManifest) {
+                edit.setPreviousLogNumber(0);
+                edit.setLogNumber(log.getFileNumber());
+                // apply recovered edits
+                versions.logAndApply(edit, mutex);
+            }
 
             // cleanup unused files
             deleteObsoleteFiles();
@@ -587,7 +606,19 @@ public class DbImpl
         }
     }
 
-    private long recoverLogFile(long fileNumber, VersionEdit edit)
+    private static class RecoverResult
+    {
+        long maxSequence;
+        boolean saveManifest;
+
+        public RecoverResult(long maxSequence, boolean saveManifest)
+        {
+            this.maxSequence = maxSequence;
+            this.saveManifest = saveManifest;
+        }
+    }
+
+    private RecoverResult recoverLogFile(long fileNumber, boolean lastLog, VersionEdit edit)
             throws IOException
     {
         checkState(mutex.isHeldByCurrentThread());
@@ -600,7 +631,9 @@ public class DbImpl
 
             // Read all the records and add to a memtable
             long maxSequence = 0;
-            MemTable memTable = null;
+            int compactions = 0;
+            boolean saveManifest = false;
+            MemTable mem = null;
             for (Slice record = logReader.readRecord(); record != null; record = logReader.readRecord()) {
                 SliceInput sliceInput = record.input();
                 // read header
@@ -614,10 +647,10 @@ public class DbImpl
                 // read entries
                 try (WriteBatchImpl writeBatch = readWriteBatch(sliceInput, updateSize)) {
                     // apply entries to memTable
-                    if (memTable == null) {
-                        memTable = new MemTable(internalKeyComparator);
+                    if (mem == null) {
+                        mem = new MemTable(internalKeyComparator);
                     }
-                    writeBatch.forEach(new InsertIntoHandler(memTable, sequenceBegin));
+                    writeBatch.forEach(new InsertIntoHandler(mem, sequenceBegin));
                 }
 
                 // update the maxSequence
@@ -627,18 +660,38 @@ public class DbImpl
                 }
 
                 // flush mem table if necessary
-                if (memTable.approximateMemoryUsage() > options.writeBufferSize()) {
-                    writeLevel0Table(memTable, edit, null);
-                    memTable = null;
+                if (mem.approximateMemoryUsage() > options.writeBufferSize()) {
+                    compactions++;
+                    saveManifest = true;
+                    writeLevel0Table(mem, edit, null);
+                    mem = null;
+                }
+            }
+
+            if (options.reuseLogs() && lastLog && compactions == 0) {
+                Preconditions.checkState(this.log == null);
+                Preconditions.checkState(this.memTable == null);
+                long originalSize = file.length();
+                final WritableFile writableFile = env.newAppendableFile(file);
+                //Log(options_.info_log, "Reusing old log %s \n", fname.c_str());
+                this.log = Logs.createLogWriter(fileNumber, writableFile, originalSize);
+                if (mem != null) {
+                    this.memTable = mem;
+                    mem = null;
+                }
+                else {
+                    // mem can be NULL if lognum exists but was empty.
+                    this.memTable = new MemTable(internalKeyComparator);
                 }
             }
 
             // flush mem table
-            if (memTable != null && !memTable.isEmpty()) {
-                writeLevel0Table(memTable, edit, null);
+            if (mem != null && !mem.isEmpty()) {
+                saveManifest = true;
+                writeLevel0Table(mem, edit, null);
             }
 
-            return maxSequence;
+            return new RecoverResult(maxSequence, saveManifest);
         }
     }
 
@@ -1559,7 +1612,7 @@ public class DbImpl
         return writeBatch;
     }
 
-    private Slice writeWriteBatch(WriteBatchImpl updates, long sequenceBegin)
+    static Slice writeWriteBatch(WriteBatchImpl updates, long sequenceBegin)
     {
         Slice record = Slices.allocate(SIZE_OF_LONG + SIZE_OF_INT + updates.getApproximateSize());
         final SliceOutput sliceOutput = record.output();
@@ -1736,6 +1789,37 @@ public class DbImpl
         finally {
             mutex.unlock();
         }
+    }
+
+    public static boolean destroyDB(File dbname) throws IOException
+    {
+        // Ignore error in case directory does not exist
+        File[] filenames = dbname.listFiles();
+        if (filenames == null || filenames.length == 0) {
+            return true;
+        }
+
+        boolean res = true;
+        File lockFile = new File(dbname, Filename.lockFileName());
+        DbLock lock = new DbLock(lockFile);
+        try {
+            for (File filename : filenames) {
+                FileInfo fileInfo = Filename.parseFileName(filename);
+                if (fileInfo != null && fileInfo.getFileType() != FileType.DB_LOCK) {  // Lock file will be deleted at end
+                    res &= filename.delete();
+                }
+            }
+        }
+        finally {
+            try {
+                lock.release(); // Ignore error since state is already gone
+            }
+            catch (Exception ignore) {
+            }
+        }
+        lockFile.delete();
+        dbname.delete();  // Ignore error in case dir contains other files
+        return res;
     }
 
     private class WriteBatchInternal

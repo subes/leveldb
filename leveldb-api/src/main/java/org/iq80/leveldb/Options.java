@@ -33,6 +33,7 @@ public class Options
     private Logger logger;
     private long cacheSize = 8 << 20;
     private XFilterPolicy filterPolicy;
+    private boolean reuseLogs = false;
 
     public static Options fromOptions(Options options)
     {
@@ -50,6 +51,7 @@ public class Options
         options1.logger = options.logger;
         options1.cacheSize = options.cacheSize;
         options1.filterPolicy = options.filterPolicy;
+        options1.reuseLogs = options.reuseLogs;
         return options1;
     }
 
@@ -197,5 +199,20 @@ public class Options
     public XFilterPolicy filterPolicy()
     {
         return filterPolicy;
+    }
+
+    /**
+     * If true, append to existing MANIFEST and log files
+     * when a database is opened.  This can significantly speed up open.
+     */
+    public Options reuseLogs(boolean reuseLogs)
+    {
+        this.reuseLogs = reuseLogs;
+        return this;
+    }
+
+    public boolean reuseLogs()
+    {
+        return this.reuseLogs;
     }
 }
