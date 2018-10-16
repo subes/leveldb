@@ -19,9 +19,12 @@ package org.iq80.leveldb.util;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.channels.ClosedByInterruptException;
+import java.nio.channels.ClosedChannelException;
 import java.nio.channels.FileChannel;
 
 import static java.util.Objects.requireNonNull;
@@ -31,11 +34,14 @@ import static java.util.Objects.requireNonNull;
  */
 public class UnbufferedRandomInputFile implements RandomInputFile
 {
-    private final String file;
-    private final FileChannel fileChannel;
+    private static final int MAX_RETRY = Integer.getInteger(" org.iq80.leveldb.FileChannel.RETRY", 1000);
+    private final Object lock = new Object();
+    private final File file;
+    private volatile FileChannel fileChannel;
     private final long size;
+    private boolean closed = false;
 
-    private UnbufferedRandomInputFile(String file, FileChannel fileChannel, long size)
+    private UnbufferedRandomInputFile(File file, FileChannel fileChannel, long size)
     {
         this.file = file;
         this.fileChannel = fileChannel;
@@ -45,8 +51,13 @@ public class UnbufferedRandomInputFile implements RandomInputFile
     public static RandomInputFile open(File file) throws IOException
     {
         requireNonNull(file, "file is null");
-        FileChannel channel = new FileInputStream(file).getChannel();
-        return new UnbufferedRandomInputFile(file.getAbsolutePath(), channel, channel.size());
+        FileChannel channel = openChannel(file);
+        return new UnbufferedRandomInputFile(file, channel, channel.size());
+    }
+
+    private static FileChannel openChannel(File file) throws FileNotFoundException
+    {
+        return new FileInputStream(file).getChannel();
     }
 
     @Override
@@ -59,17 +70,53 @@ public class UnbufferedRandomInputFile implements RandomInputFile
     public ByteBuffer read(long offset, int length) throws IOException
     {
         ByteBuffer uncompressedBuffer = ByteBuffer.allocate(length).order(ByteOrder.LITTLE_ENDIAN);
-        fileChannel.read(uncompressedBuffer, offset);
-        if (uncompressedBuffer.hasRemaining()) {
-            throw new IOException("Could not read all the data");
+        int maxRetry = MAX_RETRY;
+        do {
+            final FileChannel fc = this.fileChannel;
+            try {
+                fc.read(uncompressedBuffer, offset);
+                if (uncompressedBuffer.hasRemaining()) {
+                    throw new IOException("Could not read all the data");
+                }
+                uncompressedBuffer.clear();
+                return uncompressedBuffer;
+            }
+            catch (ClosedByInterruptException e) {
+                throw e;
+            }
+            catch (ClosedChannelException e) {
+                uncompressedBuffer.clear();
+                if (!reOpenChannel(fc)) {
+                    throw new IOException("Channel closed by an other thread concurrently");
+                }
+            }
+        } while (--maxRetry > 0);
+        throw new IOException("Unable to reopen file after close exception");
+    }
+
+    private boolean reOpenChannel(FileChannel currentFc) throws FileNotFoundException
+    {
+        synchronized (lock) {
+            if (closed) {
+                //externally closed
+                return false;
+            }
+            if (this.fileChannel == currentFc) {
+                this.fileChannel = openChannel(file);
+            }
         }
-        uncompressedBuffer.clear();
-        return uncompressedBuffer;
+        return true;
     }
 
     @Override
     public void close() throws IOException
     {
+        synchronized (lock) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+        }
         fileChannel.close();
     }
 
@@ -77,8 +124,8 @@ public class UnbufferedRandomInputFile implements RandomInputFile
     public String toString()
     {
         return "FileTableDataSource{" +
-                "file='" + file + '\'' +
-                ", size=" + size +
-                '}';
+            "file='" + file + '\'' +
+            ", size=" + size +
+            '}';
     }
 }
