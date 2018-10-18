@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.iq80.leveldb</groupId>
+        <groupId>io.github.pcmind</groupId>
         <artifactId>leveldb-project</artifactId>
         <version>0.11-SNAPSHOT</version>
     </parent>

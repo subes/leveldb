@@ -8,13 +8,14 @@
         <version>77</version>
     </parent>
 
-    <groupId>org.iq80.leveldb</groupId>
+    <groupId>io.github.pcmind</groupId>
     <artifactId>leveldb-project</artifactId>
     <version>0.11-SNAPSHOT</version>
     <packaging>pom</packaging>
 
+    <name>${project.groupId}:${project.artifactId}</name>
     <description>Port of LevelDB to Java</description>
-    <url>http://github.com/dain/leveldb</url>
+    <url>http://github.com/pcmind/leveldb</url>
 
     <modules>
         <module>leveldb-api</module>
@@ -45,14 +46,19 @@
             <url>http://hiramchirino.com</url>
             <timezone>-5</timezone>
         </developer>
+        <developer>
+            <id>pcmind</id>
+            <name>Honore Vasconcelos</name>
+            <email>honore.vasconcelos@gmail.com</email>
+        </developer>
     </developers>
 
     <scm>
-        <connection>scm:git:git://github.com/dain/leveldb.git</connection>
-        <developerConnection>scm:git:git@github.com:dain/leveldb.git</developerConnection>
-        <url>http://github.com/dain/leveldb/tree/master</url>
+        <connection>scm:git:git://github.com/pcmind/leveldb.git</connection>
+        <developerConnection>scm:git:git@github.com:pcmind/leveldb.git</developerConnection>
+        <url>http://github.com/pcmind/leveldb/tree/master</url>
       <tag>HEAD</tag>
-  </scm>
+    </scm>
 
     <properties>
         <air.check.skip-spotbugs>true</air.check.skip-spotbugs>
@@ -68,13 +74,13 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>org.iq80.leveldb</groupId>
+                <groupId>io.github.pcmind</groupId>
                 <artifactId>leveldb-api</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>org.iq80.leveldb</groupId>
+                <groupId>io.github.pcmind</groupId>
                 <artifactId>leveldb</artifactId>
                 <version>${project.version}</version>
             </dependency>

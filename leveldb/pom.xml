@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.iq80.leveldb</groupId>
+        <groupId>io.github.pcmind</groupId>
         <artifactId>leveldb-project</artifactId>
         <version>0.11-SNAPSHOT</version>
     </parent>
@@ -22,7 +22,7 @@
     <dependencies>
 
         <dependency>
-            <groupId>org.iq80.leveldb</groupId>
+            <groupId>io.github.pcmind</groupId>
             <artifactId>leveldb-api</artifactId>
         </dependency>
 
@@ -64,6 +64,12 @@
             <artifactId>leveldbjni</artifactId>
             <version>1.1</version>
             <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <artifactId>org.iq80.leveldb</artifactId>
+                    <groupId>leveldb-api</groupId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
     </dependencies>
