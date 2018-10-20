@@ -1,17 +1,19 @@
 # LevelDB in Java
+[![Maven Central](https://maven-badges.herokuapp.com/maven-central/io.github.pcmind/leveldb/badge.svg)](https://maven-badges.herokuapp.com/maven-central/io.github.pcmind/leveldb)
+[![TravisCI Build Status](https://travis-ci.org/pcmind/leveldb.svg?branch=master)](https://travis-ci.org/pcmind/leveldb)
+[![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/kkiy4t9983gsy6bj/branch/master?svg=true)](https://ci.appveyor.com/project/pcmind/leveldb/branch/master)
 
-This is a rewrite (port) of [LevelDB](http://code.google.com/p/leveldb/) in
-Java.  This goal is to have a feature complete implementation that is within
-10% of the performance of the C++ original and produces byte-for-byte exact
-copies of the C++ code.
+## About this fork
+This is a rewrite (port) of [LevelDB](https://github.com/google/leveldb) in
+Java. Forked from original [dain/leveldb](https://github.com/dain/leveldb/), aimed at
+improving the work already done, add missing features and make it production ready. 
 
-# Current status
+## Current status
 
-Currently the code base is basically functional, but only trivially tested.
-In some places, this code is a literal conversion of the C++ code and in
-others it has been converted to a more natural Java style.  The plan is to
-leave the code closer to the C++ original until the baseline performance has
-been established.
+The plan is to maintain the port as close as possible to original C++ code, with minimal 
+refactoring until everything is ported. For now, port will also maintain its api 
+as close as possible to original [dain/leveldb](https://github.com/dain/leveldb/) 
+to enable merges and compare compatibility with [fusesource/leveldbjni](https://github.com/fusesource/leveldbjni/).
 
 ## API Usage:
 
@@ -167,7 +169,16 @@ Options options = new Options();
 factory.destroy(new File("example"), options);
 ```
 
-# Projects using this port of LevelDB
+## Maven
+In a Maven project, include the `io.github.pcmind:leveldb` artifact in the dependencies section
+of your `pom.xml`:
+```xml
+<dependency>
+    <groupId>io.github.pcmind</groupId>
+    <artifactId>leveldb</artifactId>
+    <classifier>uber</classifier>
+    <version>0.11</version>
+</dependency>
+```
 
-* [ActiveMQ Apollo](http://activemq.apache.org/apollo/): Defaults to using leveldbjni, but falls 
-  back to this port if the jni port is not available on your platform.
+## Performance
