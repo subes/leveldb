@@ -67,6 +67,8 @@
 
         <air.check.skip-checkstyle>${air.check.skip-basic}</air.check.skip-checkstyle>
         <air.check.fail-checkstyle>${air.check.fail-basic}</air.check.fail-checkstyle>
+        <!-- leveldbjni used in unit tests depend on org.iq80.leveldb:leveldb-api that is duplicate from current project -->
+        <air.check.skip-duplicate-finder>true</air.check.skip-duplicate-finder>
 
         <air.javadoc.lint>-missing</air.javadoc.lint>
     </properties>
