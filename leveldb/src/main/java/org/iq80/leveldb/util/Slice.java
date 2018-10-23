@@ -681,6 +681,29 @@ public final class Slice
         return this.length - that.length;
     }
 
+    public boolean isPrefixOf(Slice that)
+    {
+        if (this == that) {
+            return true;
+        }
+        if (this.data == that.data && length == that.length && offset == that.offset) {
+            return true;
+        }
+        if (this.length > that.length) {
+            return false;
+        }
+
+        int minLength = this.length;
+        for (int i = 0; i < minLength; i++) {
+            int thisByte = 0xFF & this.data[this.offset + i];
+            int thatByte = 0xFF & that.data[that.offset + i];
+            if (thisByte != thatByte) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /**
      * Decodes this buffer's readable bytes into a string with the specified
      * character set name.

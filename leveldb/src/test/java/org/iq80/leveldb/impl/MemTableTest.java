@@ -79,7 +79,7 @@ public class MemTableTest
         final MemTableIterator iter = getMemTableIterator(cmp);
         MergingIterator mIter = new MergingIterator(Lists.newArrayList(iter), cmp);
         testUserKey(new SnapshotSeekingIterator(new DbIterator(mIter, () -> {
-        }), Integer.MAX_VALUE, userComparator, (internalKey, bytes) -> {
+        }), Integer.MAX_VALUE, userComparator, null, (internalKey, bytes) -> {
         }));
     }
 
@@ -101,7 +101,7 @@ public class MemTableTest
         final MemTableIterator iter = getMemTableIterator(cmp);
         MergingIterator mIter = new MergingIterator(Lists.newArrayList(iter), cmp);
         DBIteratorAdapter adapter = new DBIteratorAdapter(new SnapshotSeekingIterator(new DbIterator(mIter, () -> {
-        }), Integer.MAX_VALUE, userComparator, (internalKey, bytes) -> {
+        }), Integer.MAX_VALUE, userComparator, null, (internalKey, bytes) -> {
         }));
         SeekingIterator<Slice, Slice> sliceSliceSeekingIterator = SeekingDBIteratorAdapter.toSeekingIterator(adapter, Slice::getBytes, Slice::new, Slice::new);
         testUserKey(sliceSliceSeekingIterator);

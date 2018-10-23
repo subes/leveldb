@@ -57,6 +57,18 @@ public interface DB
     DBIterator iterator();
 
     /**
+     * Return a iterator over contents of the database that with keys with {@code prefix}.
+     *
+     * @param options iterator read options
+     * @param prefix keys prefix
+     * @return new iterator over a view o the database.
+     */
+    default DBIterator prefixIterator(ReadOptions options, byte[] prefix)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Return a iterator over the contents of the database.
      * The result of {@link DB#iterator(ReadOptions)} will automatically position
      * itsel to first entry if seek method is not called.

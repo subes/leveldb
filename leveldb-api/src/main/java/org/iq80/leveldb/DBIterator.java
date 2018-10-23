@@ -63,6 +63,9 @@ public interface DBIterator
      */
     void seekToLast();
 
+    /**
+     * Close resources associated to this iterator. Not closing it may lead to memory leak.
+      */
     @Override
     void close();
 }

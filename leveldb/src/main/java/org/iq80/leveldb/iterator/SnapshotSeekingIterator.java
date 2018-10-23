@@ -32,15 +32,17 @@ public final class SnapshotSeekingIterator
     private final InternalIterator iterator;
     private final long sequence;
     private final Comparator<Slice> userComparator;
+    private final Slice prefix;
     private final IRecordBytesListener listener;
     private Slice key;
     private Slice value;
 
-    public SnapshotSeekingIterator(InternalIterator iterator, long sequence, Comparator<Slice> userComparator, IRecordBytesListener listener)
+    public SnapshotSeekingIterator(InternalIterator iterator, long sequence, Comparator<Slice> userComparator, Slice prefix, IRecordBytesListener listener)
     {
         this.iterator = iterator;
         this.sequence = sequence;
         this.userComparator = userComparator;
+        this.prefix = prefix;
         this.listener = listener;
     }
 
@@ -122,6 +124,11 @@ public final class SnapshotSeekingIterator
         do {
             InternalKey key = iterator.key();
             if (key.getSequenceNumber() <= sequence) {
+                // Assuming one require a prefix based iterator, internally iteration may avoid reading unwanted
+                // hidden entries that are not of the user interest (do not share same prefix).
+                if (prefix != null && !prefix.isPrefixOf(key.getUserKey())) {
+                    break;
+                }
                 if (valueType != ValueType.DELETION && userComparator.compare(key.getUserKey(), this.key) < 0) {
                     // We encountered a non-deleted value in entries for previous keys,
                     return true;
@@ -164,6 +171,11 @@ public final class SnapshotSeekingIterator
             Slice value = iterator.value();
             listener.record(ikey, ikey.size() + value.length());
             if (ikey.getSequenceNumber() <= sequence) {
+                // Assuming one require a prefix based iterator, internally iteration may avoid reading unwanted
+                // hidden entries that are not of the user interest (do not share same prefix).
+                if (skipping && prefix != null && !prefix.isPrefixOf(ikey.getUserKey())) {
+                    break;
+                }
                 switch (ikey.getValueType()) {
                     case DELETION:
                         // Arrange to skip all upcoming entries for this key since
