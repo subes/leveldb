@@ -40,6 +40,8 @@ import org.iq80.leveldb.util.Snappy;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Date;
@@ -56,6 +58,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class DbBenchmark
 {
+    public static final String FACTORY_CLASS = System.getProperty("leveldb.factory", "org.iq80.leveldb.impl.Iq80DBFactory");
     private final boolean useExisting;
     private final Integer writeBufferSize;
     private final File databaseDir;
@@ -78,7 +81,7 @@ public class DbBenchmark
             throws Exception
     {
         ClassLoader cl = DbBenchmark.class.getClassLoader();
-        factory = (DBFactory) cl.loadClass(System.getProperty("leveldb.factory", "org.iq80.leveldb.impl.Iq80DBFactory")).newInstance();
+        factory = (DBFactory) cl.loadClass(FACTORY_CLASS).newInstance();
         this.flags = flags;
         benchmarks = (List<String>) flags.get(Flag.benchmarks);
 
@@ -482,6 +485,7 @@ public class DbBenchmark
         long bytes = 0;
         for (int loops = 0; loops < 5; loops++) {
             try (DBIterator iterator = db.iterator()) {
+                iterator.seekToFirst();
                 for (int i = 0; i < reads && iterator.hasNext(); i++) {
                     Map.Entry<byte[], byte[]> entry = iterator.next();
                     bytes += entry.getKey().length + entry.getValue().length;
@@ -505,7 +509,7 @@ public class DbBenchmark
             byte[] key = formatNumber(thread.rand.nextInt(num));
             byte[] value = db.get(key);
             if (value != null) {
-                found ++;
+                found++;
                 bytes += key.length + value.length;
             }
             thread.stats.finishedSingleOp();
@@ -790,7 +794,32 @@ public class DbBenchmark
             }
 
         }
+        System.out.println("Using factory: " + FACTORY_CLASS);
+        warmUpJVM(flags, (Integer) flags.get(Flag.jvm_warm_up_iterations));
+        System.out.println("Main Benchmark Run");
         new DbBenchmark(flags).run();
+    }
+
+    private static void warmUpJVM(Map<Flag, Object> flags, int runs) throws Exception
+    {
+        PrintStream outBack = System.out;
+        PrintStream errBack = System.err;
+        PrintStream printStream = new PrintStream(new OutputStream()
+        {
+            @Override
+            public void write(int i)
+            {
+            }
+        });
+        System.setOut(printStream);
+        System.setErr(printStream);
+        for (int i = 1; i <= runs; i++) {
+            outBack.println("Warm up run #" + i + " (no output will be presented)");
+            new DbBenchmark(flags).run();
+        }
+        System.setOut(outBack);
+        System.setErr(errBack);
+        outBack.println();
     }
 
     private enum Flag
@@ -951,6 +980,15 @@ public class DbBenchmark
             public Object parseValue(String value)
             {
                 return value;
+            }
+        },
+
+        // Use to define number of warm up iteration
+        jvm_warm_up_iterations(1) {
+            @Override
+            public Object parseValue(String value)
+            {
+                return Integer.parseInt(value);
             }
         };
 
@@ -1181,21 +1219,16 @@ public class DbBenchmark
 
         void report(String name)
         {
-
-            // Pretend at least one op was done in case we are running a benchmark
-            // that does nto call FinishedSingleOp().
-            if (done < 1) {
-                done = 1;
-            }
-
             if (bytes > 0) {
-                String rate = String.format("%6.1f MB/s", (bytes / 1048576.0) / seconds);
+                double elapsed = TimeUnit.NANOSECONDS.toSeconds(finish - start);
+                String rate = String.format("%6.1f MB/s", (bytes / 1048576.0) / elapsed);
                 message.insert(0, " ").insert(0, rate);
             }
 
-            System.out.printf("%-12s : %11.5f micros/op;%s%s%n",
+            System.out.printf("%-12s : %11.5f micros/op; %11.0f op/sec;%s%s%n",
                     name,
-                    seconds * 1.0e6 / done,
+                    done == 0 ? 0 : (seconds * 1.0e6 / done),
+                    done / seconds,
                     (message == null ? "" : " "),
                     message);
             if (flags.get(Flag.histogram).equals(true)) {
