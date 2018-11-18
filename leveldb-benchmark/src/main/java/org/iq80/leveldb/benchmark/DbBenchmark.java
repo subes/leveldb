@@ -68,6 +68,8 @@ public class DbBenchmark
     private final List<String> benchmarks;
     private final int blockCacheSize;
     private final int bloomFilterBits;
+    private final int maxFileSize;
+    private final int blockSize;
     private DB db;
     private int num;
     private int reads;
@@ -86,6 +88,8 @@ public class DbBenchmark
         benchmarks = (List<String>) flags.get(Flag.benchmarks);
 
         writeBufferSize = (Integer) flags.get(Flag.write_buffer_size);
+        maxFileSize = (Integer) flags.get(Flag.max_file_size);
+        blockSize = (Integer) flags.get(Flag.block_size);
         compressionRatio = (Double) flags.get(Flag.compression_ratio);
         useExisting = (Boolean) flags.get(Flag.use_existing_db);
         blockCacheSize = (Integer) flags.get(Flag.cache_size);
@@ -427,6 +431,12 @@ public class DbBenchmark
     {
         Options options = new Options();
         options.createIfMissing(!useExisting);
+        if (maxFileSize >= 0) {
+            options.maxFileSize(maxFileSize);
+        }
+        if (blockSize >= 0) {
+            options.blockSize(blockSize);
+        }
         if (blockCacheSize >= 0) {
             options.cacheSize(blockCacheSize);
         }
@@ -940,6 +950,26 @@ public class DbBenchmark
         write_buffer_size(null) {
             @Override
             public Object parseValue(String value)
+            {
+                return Integer.parseInt(value);
+            }
+        },
+
+        // Number of bytes written to each file.
+        // (initialized to default value by "main")
+        max_file_size(0) {
+            @Override
+            protected Object parseValue(String value)
+            {
+                return Integer.parseInt(value);
+            }
+        },
+
+        // Approximate size of user data packed per block (before compression.
+        // (initialized to default value by "main")
+        block_size(0) {
+            @Override
+            protected Object parseValue(String value)
             {
                 return Integer.parseInt(value);
             }

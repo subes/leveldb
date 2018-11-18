@@ -24,7 +24,6 @@ import java.util.List;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.iq80.leveldb.impl.DbConstants.NUM_LEVELS;
-import static org.iq80.leveldb.impl.VersionSet.MAX_GRAND_PARENT_OVERLAP_BYTES;
 
 // A Compaction encapsulates information about a compaction.
 public class Compaction implements AutoCloseable
@@ -61,14 +60,14 @@ public class Compaction implements AutoCloseable
     // all L >= level_ + 2).
     private final int[] levelPointers = new int[NUM_LEVELS];
 
-    public Compaction(Version inputVersion, int level, List<FileMetaData> levelInputs, List<FileMetaData> levelUpInputs, List<FileMetaData> grandparents)
+    public Compaction(Version inputVersion, int level, long maxOutputFileSize, List<FileMetaData> levelInputs, List<FileMetaData> levelUpInputs, List<FileMetaData> grandparents)
     {
         this.inputVersion = inputVersion;
         this.level = level;
         this.levelInputs = levelInputs;
         this.levelUpInputs = levelUpInputs;
         this.grandparents = grandparents;
-        this.maxOutputFileSize = VersionSet.maxFileSizeForLevel(level);
+        this.maxOutputFileSize = maxOutputFileSize;
         this.inputs = new List[] {levelInputs, levelUpInputs};
         inputVersion.retain();
     }
@@ -120,7 +119,7 @@ public class Compaction implements AutoCloseable
         // a very expensive merge later on.
         return (levelInputs.size() == 1 &&
                 levelUpInputs.isEmpty() &&
-                totalFileSize(grandparents) <= MAX_GRAND_PARENT_OVERLAP_BYTES);
+                totalFileSize(grandparents) <= inputVersion.getVersionSet().maxGrandParentOverlapBytes());
 
     }
 
@@ -187,7 +186,7 @@ public class Compaction implements AutoCloseable
         }
         seenKey = true;
 
-        if (overlappedBytes > MAX_GRAND_PARENT_OVERLAP_BYTES) {
+        if (overlappedBytes > inputVersion.getVersionSet().maxGrandParentOverlapBytes()) {
             // Too much overlap for current output; start new output
             overlappedBytes = 0;
             return true;

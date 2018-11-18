@@ -63,12 +63,6 @@ public class VersionSet
 {
     private static final int L0_COMPACTION_TRIGGER = 4;
 
-    public static final int TARGET_FILE_SIZE = 2 * 1048576;
-
-    // Maximum bytes of overlaps in grandparent (i.e., level+2) before we
-    // stop building a single file in a level.level+1 compaction.
-    public static final long MAX_GRAND_PARENT_OVERLAP_BYTES = 10L * TARGET_FILE_SIZE;
-
     private final AtomicLong nextFileNumber = new AtomicLong(2);
     private long manifestFileNumber = 1;
     private Version current;
@@ -460,7 +454,7 @@ public class VersionSet
         if (fileInfo == null ||
                 fileInfo.getFileType() != Filename.FileType.DESCRIPTOR ||
                 // Make new compacted MANIFEST if old one is too big
-                currentFile.length() >= TARGET_FILE_SIZE) {
+                currentFile.length() >= targetFileSize()) {
             return false;
         }
         Preconditions.checkState(descriptorLog == null, "descriptor log should be null");
@@ -538,11 +532,37 @@ public class VersionSet
         return builder.build();
     }
 
-    private static double maxBytesForLevel(int level)
+    public long targetFileSize()
+    {
+        return options.maxFileSize();
+    }
+
+    /**
+     * Maximum bytes of overlaps in grandparent (i.e., level+2) before we
+     * stop building a single file in a level->level+1 compaction.
+     */
+    public long maxGrandParentOverlapBytes()
+    {
+        return 10L * targetFileSize();
+    }
+
+    /**
+     * Maximum number of bytes in all compacted files.  We avoid expanding
+     * the lower level file set of a compaction if it would make the
+     * total compaction cover more than this many bytes.
+     */
+    public long expandedCompactionByteSizeLimit()
+    {
+        return 25L * targetFileSize();
+    }
+
+    private double maxBytesForLevel(int level)
     {
         // Note: the result for level zero is not really used since we set
         // the level-0 compaction threshold based on number of files.
-        double result = 10 * 1048576.0;  // Result for both level-0 and level-1
+
+        // Result for both level-0 and level-1
+        double result = 10 * 1048576.0;
         while (level > 1) {
             result *= 10;
             level--;
@@ -550,9 +570,18 @@ public class VersionSet
         return result;
     }
 
-    public static long maxFileSizeForLevel(int level)
+    public long maxFileSizeForLevel()
     {
-        return TARGET_FILE_SIZE;  // We could vary per level to reduce number of files?
+        return targetFileSize();
+    }
+
+    public long totalFileSize(List<FileMetaData> files)
+    {
+        long sum = 0;
+        for (FileMetaData file : files) {
+            sum += file.getFileSize();
+        }
+        return sum;
     }
 
     public boolean needsCompaction()
@@ -637,8 +666,11 @@ public class VersionSet
         // changing the number of "level+1" files we pick up.
         if (!levelUpInputs.isEmpty()) {
             List<FileMetaData> expanded0 = getOverlappingInputs(level, allStart, allLimit);
+            long levelUpInputSize = totalFileSize(levelUpInputs);
+            long expanded0Size = totalFileSize(expanded0);
 
-            if (expanded0.size() > levelInputs.size()) {
+            if (expanded0.size() > levelInputs.size()
+                    && levelUpInputSize + expanded0Size < expandedCompactionByteSizeLimit()) {
                 range = getRange(expanded0);
                 InternalKey newStart = range.getKey();
                 InternalKey newLimit = range.getValue();
@@ -681,7 +713,7 @@ public class VersionSet
 //                    EscapeString(largest.Encode()).c_str());
 //        }
 
-        Compaction compaction = new Compaction(current, level, levelInputs, levelUpInputs, grandparents);
+        Compaction compaction = new Compaction(current, level, maxFileSizeForLevel(), levelInputs, levelUpInputs, grandparents);
 
         // Update the place where we will do the next compaction for this level.
         // We update this immediately instead of waiting for the VersionEdit

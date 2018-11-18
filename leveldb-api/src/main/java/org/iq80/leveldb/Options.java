@@ -26,6 +26,7 @@ public class Options
     private int maxOpenFiles = 1000;
 
     private int blockRestartInterval = 16;
+    private int maxFileSize = 2 << 20;
     private int blockSize = 4 * 1024;
     private CompressionType compressionType = CompressionType.SNAPPY;
     private boolean paranoidChecks;
@@ -114,6 +115,31 @@ public class Options
     public Options blockRestartInterval(int blockRestartInterval)
     {
         this.blockRestartInterval = blockRestartInterval;
+        return this;
+    }
+
+    public int maxFileSize()
+    {
+        return maxFileSize;
+    }
+
+    /**
+     * Leveldb will write up to this amount of bytes to a file before
+     * switching to a new one.
+     * Most clients should leave this parameter alone.  However if your
+     * filesystem is more efficient with larger files, you could
+     * consider increasing the value.  The downside will be longer
+     * compactions and hence longer latency/performance hiccups.
+     * Another reason to increase this parameter might be when you are
+     * initially populating a large database.
+     * <p>
+     * Default: 2MB
+     *
+     * @param maxFileSize max file size int bytes
+     */
+    public Options maxFileSize(int maxFileSize)
+    {
+        this.maxFileSize = maxFileSize;
         return this;
     }
 

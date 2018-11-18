@@ -130,6 +130,7 @@ public class DbImpl
         this.env = env;
         requireNonNull(options, "options is null");
         requireNonNull(databaseDir, "databaseDir is null");
+        //TODO make a copy of options
         this.options = options;
 
         if (this.options.compressionType() == CompressionType.SNAPPY && !Snappy.available()) {

@@ -30,7 +30,6 @@ import java.nio.charset.Charset;
 
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.Objects.requireNonNull;
-import static org.iq80.leveldb.impl.VersionSet.TARGET_FILE_SIZE;
 
 public class TableBuilder
 {
@@ -84,7 +83,7 @@ public class TableBuilder
         blockSize = options.blockSize();
         compressionType = options.compressionType();
 
-        dataBlockBuilder = new BlockBuilder((int) Math.min(blockSize * 1.1, TARGET_FILE_SIZE), blockRestartInterval, userComparator);
+        dataBlockBuilder = new BlockBuilder((int) Math.min(blockSize * 1.1, options.maxFileSize()), blockRestartInterval, userComparator);
 
         // with expected 50% compression
         int expectedNumberOfBlocks = 1024;

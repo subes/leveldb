@@ -38,7 +38,6 @@ import static com.google.common.collect.Ordering.natural;
 import static org.iq80.leveldb.impl.DbConstants.MAX_MEM_COMPACT_LEVEL;
 import static org.iq80.leveldb.impl.DbConstants.NUM_LEVELS;
 import static org.iq80.leveldb.impl.SequenceNumber.MAX_SEQUENCE_NUMBER;
-import static org.iq80.leveldb.impl.VersionSet.MAX_GRAND_PARENT_OVERLAP_BYTES;
 
 // todo this class should be immutable
 public class Version
@@ -87,6 +86,11 @@ public class Version
                 }
             }
         }
+    }
+
+    public VersionSet getVersionSet()
+    {
+        return versionSet;
     }
 
     private TableCache getTableCache()
@@ -167,7 +171,7 @@ public class Version
                 if (level + 2 < DbConstants.NUM_LEVELS) {
                     // Check that file does not overlap too many grandparent bytes.
                     long sum = Compaction.totalFileSize(versionSet.getOverlappingInputs(level + 2, start, limit));
-                    if (sum > MAX_GRAND_PARENT_OVERLAP_BYTES) {
+                    if (sum > versionSet.maxGrandParentOverlapBytes()) {
                         break;
                     }
                 }
