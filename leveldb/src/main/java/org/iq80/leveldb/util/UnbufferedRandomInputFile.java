@@ -69,6 +69,9 @@ public class UnbufferedRandomInputFile implements RandomInputFile
     @Override
     public ByteBuffer read(long offset, int length) throws IOException
     {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new ClosedByInterruptException(); //do no close!
+        }
         ByteBuffer uncompressedBuffer = ByteBuffer.allocate(length).order(ByteOrder.LITTLE_ENDIAN);
         int maxRetry = MAX_RETRY;
         do {
