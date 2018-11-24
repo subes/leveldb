@@ -28,6 +28,8 @@ import java.io.IOException;
 
 import static org.iq80.leveldb.impl.LogChunkType.BAD_CHUNK;
 import static org.iq80.leveldb.impl.LogChunkType.EOF;
+import static org.iq80.leveldb.impl.LogChunkType.LAST;
+import static org.iq80.leveldb.impl.LogChunkType.MIDDLE;
 import static org.iq80.leveldb.impl.LogChunkType.UNKNOWN;
 import static org.iq80.leveldb.impl.LogChunkType.ZERO_TYPE;
 import static org.iq80.leveldb.impl.LogChunkType.getLogChunkTypeByPersistentId;
@@ -47,6 +49,7 @@ public class LogReader
      * Offset at which to start looking for the first record to return
      */
     private final long initialOffset;
+    private boolean resyncing;
 
     /**
      * Have we read to the end of the file?
@@ -89,6 +92,7 @@ public class LogReader
         this.monitor = monitor;
         this.verifyChecksums = verifyChecksums;
         this.initialOffset = initialOffset;
+        this.resyncing = initialOffset > 0;
     }
 
     public long getLastRecordOffset()
@@ -145,12 +149,30 @@ public class LogReader
 
         boolean inFragmentedRecord = false;
         while (true) {
-            long physicalRecordOffset = endOfBufferOffset - currentChunk.length();
             LogChunkType chunkType = readNextChunk();
+
+            // ReadPhysicalRecord may have only had an empty trailer remaining in its
+            // internal buffer. Calculate the offset of the next physical record now
+            // that it has returned, properly accounting for its header size.
+            long physicalRecordOffset = endOfBufferOffset - currentBlock.available() - HEADER_SIZE - currentChunk.length();
+
+            if (resyncing) {
+                if (chunkType == MIDDLE) {
+                    continue;
+                }
+                else if (chunkType == LAST) {
+                    resyncing = false;
+                    continue;
+                }
+                else {
+                    resyncing = false;
+                }
+            }
+
             switch (chunkType) {
                 case FULL:
                     if (inFragmentedRecord) {
-                        reportCorruption(recordScratch.size(), "Partial record without end");
+                        reportCorruption(recordScratch.size(), "partial record without end(1)");
                         // simply return this full block
                     }
                     recordScratch.reset();
@@ -160,7 +182,7 @@ public class LogReader
 
                 case FIRST:
                     if (inFragmentedRecord) {
-                        reportCorruption(recordScratch.size(), "Partial record without end");
+                        reportCorruption(recordScratch.size(), "partial record without end(2)");
                         // clear the scratch and start over from this chunk
                         recordScratch.reset();
                     }
@@ -171,7 +193,7 @@ public class LogReader
 
                 case MIDDLE:
                     if (!inFragmentedRecord) {
-                        reportCorruption(recordScratch.size(), "Missing start of fragmented record");
+                        reportCorruption(currentChunk.length(), "missing start of fragmented record(1)");
 
                         // clear the scratch and skip this chunk
                         recordScratch.reset();
@@ -183,7 +205,7 @@ public class LogReader
 
                 case LAST:
                     if (!inFragmentedRecord) {
-                        reportCorruption(recordScratch.size(), "Missing start of fragmented record");
+                        reportCorruption(currentChunk.length(), "missing start of fragmented record(2)");
 
                         // clear the scratch and skip this chunk
                         recordScratch.reset();
@@ -197,16 +219,16 @@ public class LogReader
 
                 case EOF:
                     if (inFragmentedRecord) {
-                        reportCorruption(recordScratch.size(), "Partial record without end");
-
-                        // clear the scratch and return
+                        // This can be caused by the writer dying immediately after
+                        // writing a physical record but before completing the next; don't
+                        // treat it as a corruption, just ignore the entire logical record.
                         recordScratch.reset();
                     }
                     return null;
 
                 case BAD_CHUNK:
                     if (inFragmentedRecord) {
-                        reportCorruption(recordScratch.size(), "Error in middle of record");
+                        reportCorruption(recordScratch.size(), "error in middle of record");
                         inFragmentedRecord = false;
                         recordScratch.reset();
                     }
@@ -251,10 +273,16 @@ public class LogReader
 
         // verify length
         if (length > currentBlock.available()) {
-            int dropSize = currentBlock.available() + HEADER_SIZE;
-            reportCorruption(dropSize, "Invalid chunk length");
-            currentBlock = Slices.EMPTY_SLICE.input();
-            return BAD_CHUNK;
+            if (!eof) {
+                int dropSize = currentBlock.available() + HEADER_SIZE;
+                reportCorruption(dropSize, "bad record length");
+                currentBlock = Slices.EMPTY_SLICE.input();
+                return BAD_CHUNK;
+            }
+            // If the end of the file has been reached without reading |length| bytes
+            // of payload, assume the writer died in the middle of writing the record.
+            // Don't report a corruption.
+            return EOF;
         }
 
         // skip zero length records
@@ -281,24 +309,34 @@ public class LogReader
                 // been corrupted and if we trust it, we could find some
                 // fragment of a real log record that just happens to look
                 // like a valid log record.
-                int dropSize = currentBlock.available() + HEADER_SIZE;
+                int dropSize = currentBlock.available() + HEADER_SIZE + length;
+                Slice v = new Slice(dropSize - HEADER_SIZE);
+                v.setBytes(0, currentChunk, 0, currentChunk.length());
+                currentChunk = v;
                 currentBlock = Slices.EMPTY_SLICE.input();
-                reportCorruption(dropSize, "Invalid chunk checksum");
+                reportCorruption(dropSize, "checksum mismatch");
                 return BAD_CHUNK;
             }
+        }
+
+        // Skip physical record that started before initial_offset_
+        if (endOfBufferOffset - currentBlock.available() - HEADER_SIZE - length <
+                initialOffset) {
+            currentChunk = Slices.EMPTY_SLICE;
+            return BAD_CHUNK;
         }
 
         // Skip unknown chunk types
         // Since this comes last so we the, know it is a valid chunk, and is just a type we don't understand
         if (chunkType == UNKNOWN) {
-            reportCorruption(length, String.format("Unknown chunk type %d", chunkType.getPersistentId()));
+            reportCorruption(length, "unknown record type");
             return BAD_CHUNK;
         }
 
         return chunkType;
     }
 
-    public boolean readNextBlock()
+    private boolean readNextBlock()
     {
         if (eof) {
             return false;
@@ -307,15 +345,25 @@ public class LogReader
         // clear the block
         blockScratch.reset();
 
+        int readSoFar = 0;
         // read the next full block
         while (blockScratch.writableBytes() > 0) {
             try {
                 int bytesRead = sequentialFile.read(blockScratch.writableBytes(), blockScratch);
-                if (bytesRead < 0) {
+                if (bytesRead < 0) { //eof
                     // no more bytes to read
                     eof = true;
+                    if (blockScratch.writableBytes() > 0 && readSoFar < HEADER_SIZE) {
+                        // Note that if buffer_ is non-empty, we have a truncated header at the
+                        // end of the file, which can be caused by the writer crashing in the
+                        // middle of writing the header. Instead of considering this an error,
+                        // just report EOF.
+                        currentBlock = Slices.EMPTY_SLICE.input();
+                        return false;
+                    }
                     break;
                 }
+                readSoFar += bytesRead;
                 endOfBufferOffset += bytesRead;
             }
             catch (IOException e) {
