@@ -744,7 +744,12 @@ public class DbBenchmark
 
     private void openBench(ThreadState thread) throws IOException
     {
-        //TODO implement openBench
+        for (int i = 0; i < num; i++) {
+            db.close();
+            db = null;
+            open();
+            thread.stats.finishedSingleOp();
+        }
     }
 
     private void writeSeq(ThreadState thread) throws IOException
