@@ -59,6 +59,8 @@ public final class DbConstants
      */
     public static final int READ_BYTES_PERIOD = 1048576;
 
+    public static final int NUM_NON_TABLE_CACHE_FILES = 10;
+
     private DbConstants()
     {
     }

@@ -168,7 +168,7 @@ public class DbImpl
         compactionExecutor = Executors.newSingleThreadExecutor(compactionThreadFactory);
 
         // Reserve ten files or so for other uses and give the rest to TableCache.
-        int tableCacheSize = options.maxOpenFiles() - 10;
+        int tableCacheSize = options.maxOpenFiles() - DbConstants.NUM_NON_TABLE_CACHE_FILES;
         tableCache = new TableCache(databaseDir, tableCacheSize, new InternalUserComparator(internalKeyComparator), options, env);
 
         // create the version set
@@ -579,6 +579,7 @@ public class DbImpl
 
     private void recordBackgroundError(Throwable e)
     {
+        checkState(mutex.isHeldByCurrentThread());
         Throwable backgroundException = this.backgroundException;
         if (backgroundException == null) {
             this.backgroundException = e;
@@ -626,6 +627,11 @@ public class DbImpl
         File file = new File(databaseDir, Filename.logFileName(fileNumber));
         try (SequentialFile in = env.newSequentialFile(file)) {
             LogMonitor logMonitor = LogMonitors.logMonitor();
+
+            // We intentionally make LogReader do checksumming even if
+            // paranoidChecks==false so that corruptions cause entire commits
+            // to be skipped instead of propagating bad information (like overly
+            // large sequence numbers).
             LogReader logReader = new LogReader(in, logMonitor, true, 0);
 
             // Log(options_.info_log, "Recovering log #%llu", (unsigned long long) log_number);
@@ -651,6 +657,7 @@ public class DbImpl
                     if (mem == null) {
                         mem = new MemTable(internalKeyComparator);
                     }
+                    //TODO ignore error if no paranoidChecks (but log it)
                     writeBatch.forEach(new InsertIntoHandler(mem, sequenceBegin));
                 }
 
@@ -669,6 +676,7 @@ public class DbImpl
                 }
             }
 
+            // See if we should keep reusing the last log file.
             if (options.reuseLogs() && lastLog && compactions == 0) {
                 Preconditions.checkState(this.log == null);
                 Preconditions.checkState(this.memTable == null);

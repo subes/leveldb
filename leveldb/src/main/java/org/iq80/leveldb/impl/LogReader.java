@@ -310,9 +310,6 @@ public class LogReader
                 // fragment of a real log record that just happens to look
                 // like a valid log record.
                 int dropSize = currentBlock.available() + HEADER_SIZE + length;
-                Slice v = new Slice(dropSize - HEADER_SIZE);
-                v.setBytes(0, currentChunk, 0, currentChunk.length());
-                currentChunk = v;
                 currentBlock = Slices.EMPTY_SLICE.input();
                 reportCorruption(dropSize, "checksum mismatch");
                 return BAD_CHUNK;
