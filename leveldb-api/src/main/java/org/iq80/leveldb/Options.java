@@ -45,6 +45,7 @@ public class Options
         options1.writeBufferSize = options.writeBufferSize;
         options1.maxOpenFiles = options.maxOpenFiles;
         options1.blockRestartInterval = options.blockRestartInterval;
+        options1.maxFileSize = options.maxFileSize;
         options1.blockSize = options.blockSize;
         options1.compressionType = options.compressionType;
         options1.paranoidChecks = options.paranoidChecks;

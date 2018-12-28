@@ -42,6 +42,7 @@ public class OptionsTest
         op.createIfMissing(false);
         op.errorIfExists(true);
         op.writeBufferSize(1234);
+        op.maxFileSize(56790);
         op.maxOpenFiles(2);
         op.blockRestartInterval(789);
         op.blockSize(345);
@@ -57,6 +58,7 @@ public class OptionsTest
         assertEquals(op2.createIfMissing(), false);
         assertEquals(op2.errorIfExists(), true);
         assertEquals(op2.writeBufferSize(), 1234);
+        assertEquals(op2.maxFileSize(), 56790);
         assertEquals(op2.maxOpenFiles(), 2);
         assertEquals(op2.blockRestartInterval(), 789);
         assertEquals(op2.blockSize(), 345);
