@@ -312,6 +312,7 @@ public class VersionSet
             }
         }
         catch (IOException e) {
+            options.logger().log("MANIFEST write: %s", e);
             // New manifest file was not installed, so clean up state and delete the file
             if (createdNewManifest) {
                 descriptorLog.close();
@@ -461,13 +462,13 @@ public class VersionSet
         try {
             descriptorLog = LogWriter.createWriter(fileInfo.getFileNumber(), env.newAppendableFile(currentFile));
         }
-        catch (Exception ignore) {
+        catch (Exception e) {
             assert descriptorLog == null;
-            //log me
+            options.logger().log("Reuse MANIFEST: %s", e);
             return false;
         }
 
-        //Log(options_->info_log, "Reusing MANIFEST %s\n", dscname.c_str());
+        options.logger().log("Reusing MANIFEST %s", currentFile);
         this.manifestFileNumber = fileInfo.getFileNumber();
         return true;
     }
@@ -677,13 +678,13 @@ public class VersionSet
 
                 List<FileMetaData> expanded1 = getOverlappingInputs(level + 1, newStart, newLimit);
                 if (expanded1.size() == levelUpInputs.size()) {
-//              Log(options_->info_log,
-//                  "Expanding@%d %d+%d to %d+%d\n",
-//                  level,
-//                  int(c->inputs_[0].size()),
-//                  int(c->inputs_[1].size()),
-//                  int(expanded0.size()),
-//                  int(expanded1.size()));
+                    options.logger().log(
+                            "Expanding@%s %s+%s to %s+%s",
+                            level,
+                            levelInputs.size(),
+                            levelUpInputs.size(),
+                            expanded0.size(),
+                            expanded1.size());
                     smallest = newStart;
                     largest = newLimit;
                     levelInputs = expanded0;
@@ -705,13 +706,6 @@ public class VersionSet
         else {
             grandparents = Collections.emptyList();
         }
-
-//        if (false) {
-//            Log(options_ - > info_log, "Compacting %d '%s' .. '%s'",
-//                    level,
-//                    EscapeString(smallest.Encode()).c_str(),
-//                    EscapeString(largest.Encode()).c_str());
-//        }
 
         Compaction compaction = new Compaction(current, level, maxFileSizeForLevel(), levelInputs, levelUpInputs, grandparents);
 
@@ -801,6 +795,18 @@ public class VersionSet
             }
         }
         return result;
+    }
+
+    public CharSequence levelSummary()
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.append("files[ ");
+        for (int level = 0; level < NUM_LEVELS; level++) {
+            sb.append(" ");
+            sb.append(current.getFiles(level).size());
+        }
+        sb.append(" ]");
+        return sb;
     }
 
     /**

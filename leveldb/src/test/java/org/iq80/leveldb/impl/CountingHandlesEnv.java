@@ -17,6 +17,7 @@
  */
 package org.iq80.leveldb.impl;
 
+import org.iq80.leveldb.Logger;
 import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.SequentialFile;
 import org.iq80.leveldb.util.Slice;
@@ -135,6 +136,28 @@ public class CountingHandlesEnv implements Env
     public WritableFile newAppendableFile(File file) throws IOException
     {
         return getWritableFile(env.newAppendableFile(file));
+    }
+
+    @Override
+    public Logger newLogger(File loggerFile) throws IOException
+    {
+        counter.incrementAndGet();
+        Logger logger = env.newLogger(loggerFile);
+        return new Logger()
+        {
+            @Override
+            public void log(String message)
+            {
+                logger.log(message);
+            }
+
+            @Override
+            public void close() throws IOException
+            {
+                counter.decrementAndGet();
+                logger.close();
+            }
+        };
     }
 
     private WritableFile getWritableFile(WritableFile writableFile) throws IOException

@@ -17,6 +17,8 @@
  */
 package org.iq80.leveldb.impl;
 
+import org.iq80.leveldb.Logger;
+
 public final class LogMonitors
 {
     public static LogMonitor throwExceptionMonitor()
@@ -37,22 +39,20 @@ public final class LogMonitors
         };
     }
 
-    // todo implement real logging
-    public static LogMonitor logMonitor()
+    public static LogMonitor logMonitor(Logger logger)
     {
         return new LogMonitor()
         {
             @Override
             public void corruption(long bytes, String reason)
             {
-                System.out.println(String.format("corruption of %s bytes: %s", bytes, reason));
+                logger.log("corruption of %s bytes: %s", bytes, reason);
             }
 
             @Override
             public void corruption(long bytes, Throwable reason)
             {
-                System.out.println(String.format("corruption of %s bytes", bytes));
-                reason.printStackTrace();
+                logger.log("corruption of %s bytes. %s", bytes, reason);
             }
         };
     }

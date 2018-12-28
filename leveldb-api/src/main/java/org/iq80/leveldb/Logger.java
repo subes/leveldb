@@ -17,10 +17,33 @@
  */
 package org.iq80.leveldb;
 
+import java.io.Closeable;
+import java.io.IOException;
+
 /**
  * @author <a href="http://hiramchirino.com">Hiram Chirino</a>
  */
-public interface Logger
+public interface Logger extends Closeable
 {
     void log(String message);
+
+    /**
+     * Substitutes each {@code %s} in {@code template} with an argument. Arguments without place holder will
+     * be placed at the end of template.
+     * <p>
+     * This is a default method to avoid incompatibilities with older logger interface.
+     *
+     * @param template a non-null template string containing 0 or more {@code %s} placeholders.
+     * @param args     the arguments to be substituted into the message template.
+     */
+    default void log(String template, Object... args)
+    {
+        log(String.format(template, args));
+    }
+
+    @Override
+    default void close() throws IOException
+    {
+        //default to be compatible with older interface
+    }
 }

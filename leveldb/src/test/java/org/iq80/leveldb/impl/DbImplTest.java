@@ -25,6 +25,7 @@ import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBComparator;
 import org.iq80.leveldb.DBIterator;
+import org.iq80.leveldb.Logger;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.Range;
 import org.iq80.leveldb.ReadOptions;
@@ -1390,18 +1391,18 @@ public class DbImplTest
         assertTrue(options.maxOpenFiles() > 2); //for this test to work
         DbStringWrapper db = new DbStringWrapper(options, databaseDir, EnvImpl.createEnv());
         fillLevels(db, "A", "C");
-        assertTrue(db.get("A") != null);
-        assertTrue(db.get("A.missing") == null);
+        assertNotNull(db.get("A"));
+        assertNull(db.get("A.missing"));
         db.db.invalidateAllCaches();
-        assertTrue(db.getOpenHandles() == 2, "All files but log and manifest should be closed");
+        assertEquals(db.getOpenHandles(), 3, "All files but log and manifest should be closed");
         try (StringDbIterator iterator = db.iterator()) {
             iterator.seek("B");
             assertNotNull(iterator.next());
-            assertTrue(db.getOpenHandles() > 2);
+            assertTrue(db.getOpenHandles() > 3);
         }
         db.db.invalidateAllCaches();
         //with no compaction running and no cache, all db files should be closed but log and manifest
-        assertEquals(db.getOpenHandles(), 2, "All files but log and manifest should be closed");
+        assertEquals(db.getOpenHandles(), 3, "All files but log and manifest should be closed");
         db.close();
         assertEquals(db.getOpenHandles(), 0, "All files should be closed");
     }
@@ -1473,7 +1474,8 @@ public class DbImplTest
         }
         opened.clear();
         boolean b = FileUtils.deleteRecursively(databaseDir);
-        assertFalse(!b && databaseDir.exists(), "Dir should be possible to delete! All files should have been released.");
+        //assertion is specially useful in windows
+        assertFalse(!b && databaseDir.exists(), "Dir should be possible to delete! All files should have been released. Existing files: " + FileUtils.listFiles(databaseDir));
     }
 
     private void assertBetween(long actual, int smallest, int greatest)
@@ -1909,6 +1911,12 @@ public class DbImplTest
         public WritableFile newAppendableFile(File file) throws IOException
         {
             return env.newAppendableFile(file);
+        }
+
+        @Override
+        public Logger newLogger(File loggerFile) throws IOException
+        {
+            return env.newLogger(loggerFile);
         }
 
         private class CountingFile implements RandomInputFile

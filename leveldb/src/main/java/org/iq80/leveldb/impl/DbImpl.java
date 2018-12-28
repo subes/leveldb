@@ -41,6 +41,7 @@ import org.iq80.leveldb.table.CustomUserComparator;
 import org.iq80.leveldb.table.FilterPolicy;
 import org.iq80.leveldb.table.TableBuilder;
 import org.iq80.leveldb.table.UserComparator;
+import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.DbIterator;
 import org.iq80.leveldb.util.MergingIterator;
 import org.iq80.leveldb.util.SafeListBuilder;
@@ -80,6 +81,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static java.util.Objects.requireNonNull;
 import static org.iq80.leveldb.impl.DbConstants.L0_SLOWDOWN_WRITES_TRIGGER;
 import static org.iq80.leveldb.impl.DbConstants.L0_STOP_WRITES_TRIGGER;
+import static org.iq80.leveldb.impl.DbConstants.NUM_NON_TABLE_CACHE_FILES;
 import static org.iq80.leveldb.impl.SequenceNumber.MAX_SEQUENCE_NUMBER;
 import static org.iq80.leveldb.impl.ValueType.DELETION;
 import static org.iq80.leveldb.impl.ValueType.VALUE;
@@ -94,6 +96,7 @@ public class DbImpl
         implements DB
 {
     private final Options options;
+    private final boolean ownsLogger;
     private final File databaseDir;
     private final TableCache tableCache;
     private final DbLock dbLock;
@@ -124,14 +127,14 @@ public class DbImpl
 
     private CompactionStats[] stats = new CompactionStats[DbConstants.NUM_LEVELS];
 
-    public DbImpl(Options options, File databaseDir, Env env)
+    public DbImpl(Options rawOptions, File databaseDir, Env env)
             throws IOException
     {
         this.env = env;
-        requireNonNull(options, "options is null");
+        requireNonNull(rawOptions, "options is null");
         requireNonNull(databaseDir, "databaseDir is null");
-        //TODO make a copy of options
-        this.options = options;
+        this.options = sanitizeOptions(databaseDir, rawOptions);
+        this.ownsLogger = this.options.logger() != rawOptions.logger();
 
         if (this.options.compressionType() == CompressionType.SNAPPY && !Snappy.available()) {
             // Disable snappy if it's not available.
@@ -278,10 +281,47 @@ public class DbImpl
         }
         finally {
             if (!success) {
+                if (ownsLogger) { //only close logger if created internally
+                    c.register(this.options.logger());
+                }
                 c.close();
             }
             mutex.unlock();
         }
+    }
+
+    // Fix user-supplied options to be reasonable
+    private static <T extends Comparable<T>> T clipToRange(T in, T min, T max)
+    {
+        if (in.compareTo(min) < 0) {
+            return min;
+        }
+        if (in.compareTo(max) > 0) {
+            return max;
+        }
+        return in;
+    }
+
+    /**
+     * Ensure we do not use external values as is. Ensure value are in correct ranges
+     * and a copy of external Options instance is used.
+     */
+    private Options sanitizeOptions(File databaseDir, Options src) throws IOException
+    {
+        final Options result = Options.fromOptions(src);
+        result.maxOpenFiles(clipToRange(src.maxOpenFiles(), 64 + NUM_NON_TABLE_CACHE_FILES, 50000));
+        result.writeBufferSize(clipToRange(src.writeBufferSize(), 64 << 10, 1 << 30));
+        result.maxFileSize(clipToRange(src.maxFileSize(), 1 << 20, 1 << 30));
+        result.blockSize(clipToRange(src.blockSize(), 1 << 10, 4 << 20));
+        if (result.logger() == null && databaseDir != null && (databaseDir.isDirectory() || databaseDir.mkdirs())) {
+            File file = new File(databaseDir, Filename.infoLogFileName());
+            file.renameTo(new File(databaseDir, Filename.oldInfoLogFileName()));
+            result.logger(env.newLogger(file));
+        }
+        if (result.logger() == null) {
+            result.logger(new NoOpLogger());
+        }
+        return result;
     }
 
     /**
@@ -338,6 +378,9 @@ public class DbImpl
         catch (IOException ignored) {
         }
         tableCache.close();
+        if (ownsLogger) {
+            Closeables.closeQuietly(options.logger());
+        }
         dbLock.release();
     }
 
@@ -436,10 +479,9 @@ public class DbImpl
                 if (fileInfo.getFileType() == FileType.TABLE) {
                     tableCache.evict(number);
                 }
-                // todo info logging system needed
-//                Log(options_.info_log, "Delete type=%d #%lld\n",
-//                int(type),
-//                        static_cast < unsigned long long>(number));
+                options.logger().log("Delete type=%s #%s",
+                        fileInfo.getFileType(),
+                        number);
                 file.delete();
             }
         }
@@ -529,6 +571,13 @@ public class DbImpl
             if (compaction != null) {
                 manualEnd = compaction.input(0, compaction.getLevelInputs().size() - 1).getLargest();
             }
+            options.logger().log(
+                    "Manual compaction at level-%s from %s .. %s; will stop at %s",
+                    m.level,
+                    (m.begin != null ? m.begin.toString() : "(begin)"),
+                    (m.end != null ? m.end.toString() : "(end)"),
+                    (m.done ? "(end)" : manualEnd)
+            );
         }
         else {
             compaction = versions.pickCompaction();
@@ -544,7 +593,11 @@ public class DbImpl
             compaction.getEdit().deleteFile(compaction.getLevel(), fileMetaData.getNumber());
             compaction.getEdit().addFile(compaction.getLevel() + 1, fileMetaData);
             versions.logAndApply(compaction.getEdit(), mutex);
-            // log
+            options.logger().log("Moved #%s to level-%s %s bytes: %s",
+                    fileMetaData.getNumber(),
+                    compaction.getLevel() + 1,
+                    fileMetaData.getFileSize(),
+                    versions.levelSummary());
         }
         else {
             CompactionState compactionState = new CompactionState(compaction);
@@ -552,6 +605,8 @@ public class DbImpl
                 doCompactionWork(compactionState);
             }
             catch (Exception e) {
+                options.logger().log(
+                        "Compaction error: %s", e.getMessage());
                 recordBackgroundError(e);
             }
             finally {
@@ -626,7 +681,7 @@ public class DbImpl
         checkState(mutex.isHeldByCurrentThread());
         File file = new File(databaseDir, Filename.logFileName(fileNumber));
         try (SequentialFile in = env.newSequentialFile(file)) {
-            LogMonitor logMonitor = LogMonitors.logMonitor();
+            LogMonitor logMonitor = LogMonitors.logMonitor(options.logger());
 
             // We intentionally make LogReader do checksumming even if
             // paranoidChecks==false so that corruptions cause entire commits
@@ -634,7 +689,8 @@ public class DbImpl
             // large sequence numbers).
             LogReader logReader = new LogReader(in, logMonitor, true, 0);
 
-            // Log(options_.info_log, "Recovering log #%llu", (unsigned long long) log_number);
+            options.logger().log("Recovering log #%s",
+                    fileNumber);
 
             // Read all the records and add to a memtable
             long maxSequence = 0;
@@ -682,6 +738,7 @@ public class DbImpl
                 Preconditions.checkState(this.memTable == null);
                 long originalSize = file.length();
                 final WritableFile writableFile = env.newAppendableFile(file);
+                options.logger().log("Reusing old log %s", file);
                 //Log(options_.info_log, "Reusing old log %s \n", fname.c_str());
                 this.log = Logs.createLogWriter(fileNumber, writableFile, originalSize);
                 if (mem != null) {
@@ -1105,11 +1162,12 @@ public class DbImpl
             else if (immutableMemTable != null) {
                 // We have filled up the current memtable, but the previous
                 // one is still being compacted, so we wait.
+                options.logger().log("Current memtable full; waiting...");
                 backgroundCondition.awaitUninterruptibly();
             }
             else if (versions.numberOfFilesInLevel(0) >= L0_STOP_WRITES_TRIGGER) {
                 // There are too many level-0 files.
-//                Log(options_.info_log, "waiting...\n");
+                options.logger().log("Too many L0 files; waiting...");
                 backgroundCondition.awaitUninterruptibly();
             }
             else {
@@ -1191,6 +1249,9 @@ public class DbImpl
         // write the memtable to a new sstable
         long fileNumber = versions.getNextFileNumber();
         pendingOutputs.add(fileNumber);
+        options.logger().log("Level-0 table #%s: started",
+                fileNumber);
+
         mutex.unlock();
         FileMetaData meta;
         try {
@@ -1199,6 +1260,9 @@ public class DbImpl
         finally {
             mutex.lock();
         }
+        options.logger().log("Level-0 table #%s: %s bytes",
+                meta.getNumber(),
+                meta.getFileSize());
         pendingOutputs.remove(fileNumber);
 
         // Note that if file size is zero, the file has been deleted and
@@ -1267,6 +1331,12 @@ public class DbImpl
     {
         final long startMicros = env.nowMicros();
         long immMicros = 0;  // Micros spent doing imm_ compactions
+        options.logger().log("Compacting %s@%s + %s@%s files",
+                compactionState.compaction.input(0).size(),
+                compactionState.compaction.getLevel(),
+                compactionState.compaction.input(1).size(),
+                compactionState.compaction.getLevel() + 1);
+
         checkState(mutex.isHeldByCurrentThread());
         checkArgument(versions.numberOfBytesInLevel(compactionState.getCompaction().getLevel()) > 0);
         checkArgument(compactionState.builder == null);
@@ -1379,6 +1449,8 @@ public class DbImpl
             this.stats[compactionState.compaction.getLevel() + 1].add(micros, bytesRead, bytesWritten);
         }
         installCompactionResults(compactionState);
+        options.logger().log(
+                "compacted to: %s", versions.levelSummary());
     }
 
     private void openCompactionOutputFile(CompactionState compactionState)
@@ -1437,6 +1509,12 @@ public class DbImpl
         if (currentEntries > 0) {
             // Verify that the table is usable
             tableCache.newIterator(outputNumber, new ReadOptions()).close();
+            options.logger().log(
+                    "Generated table #%s@%s: %s keys, %s bytes",
+                    outputNumber,
+                    compactionState.compaction.getLevel(),
+                    currentEntries,
+                    currentBytes);
         }
     }
 
@@ -1444,6 +1522,12 @@ public class DbImpl
             throws IOException
     {
         checkState(mutex.isHeldByCurrentThread());
+        options.logger().log("Compacted %s@%s + %s@%s files => %s bytes",
+                compact.compaction.input(0).size(),
+                compact.compaction.getLevel(),
+                compact.compaction.input(1).size(),
+                compact.compaction.getLevel() + 1,
+                compact.totalBytes);
 
         // Add compaction outputs
         compact.compaction.addInputDeletions(compact.compaction.getEdit());

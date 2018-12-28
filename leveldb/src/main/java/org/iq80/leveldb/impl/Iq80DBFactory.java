@@ -77,6 +77,7 @@ public class Iq80DBFactory
     public void repair(File path, Options options)
             throws IOException
     {
+        // TODO: implement repair
         throw new UnsupportedOperationException();
     }
 

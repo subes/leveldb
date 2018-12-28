@@ -17,6 +17,7 @@
  */
 package org.iq80.leveldb.impl;
 
+import org.iq80.leveldb.Logger;
 import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.SequentialFile;
 import org.iq80.leveldb.util.WritableFile;
@@ -69,4 +70,12 @@ public interface Env
      * @throws IOException If the file is inaccessible.
      */
     WritableFile newAppendableFile(File file) throws IOException;
+
+    /**
+     * Create and return a log file for storing informational messages.
+     *
+     * @param loggerFile logger file
+     * @return logger instance if file is writable, {@code null} otherwise
+     */
+    Logger newLogger(File loggerFile) throws IOException;
 }

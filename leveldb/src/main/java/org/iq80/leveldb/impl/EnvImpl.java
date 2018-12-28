@@ -17,6 +17,8 @@
  */
 package org.iq80.leveldb.impl;
 
+import org.iq80.leveldb.Logger;
+import org.iq80.leveldb.util.FileLogger;
 import org.iq80.leveldb.util.MMRandomInputFile;
 import org.iq80.leveldb.util.MMWritableFile;
 import org.iq80.leveldb.util.RandomInputFile;
@@ -98,6 +100,12 @@ public class EnvImpl implements Env
     public WritableFile newAppendableFile(File file) throws IOException
     {
         return UnbufferedWritableFile.open(file, true);
+    }
+
+    @Override
+    public Logger newLogger(File loggerFile) throws IOException
+    {
+        return FileLogger.createFileLogger(loggerFile);
     }
 
     private static class DelegateRandomInputFile implements RandomInputFile
