@@ -17,6 +17,8 @@
  */
 package org.iq80.leveldb.impl;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 /**
  * Helper class to limit mmap file usage so that we do not end up
  * running out virtual memory or running into kernel performance
@@ -42,13 +44,13 @@ public final class MmapLimiter
      * virtual address space on a 32 bit system when all the data is getting mapped
      * into memory.  If you really want to use MMAP anyways, use -Dleveldb.mmap=true
      */
-    public static final boolean USE_MMAP = Boolean.parseBoolean(System.getProperty("leveldb.mmap", "" + (CPU_DATA_MODEL > 32)));
+    public static final boolean USE_MMAP = Boolean.parseBoolean(System.getProperty("leveldb.mmap", String.valueOf(CPU_DATA_MODEL > 32)));
 
-    private int maxAllowedMmap;
+    private AtomicInteger maxAllowedMmap;
 
     private MmapLimiter(int maxAllowedMmap)
     {
-        this.maxAllowedMmap = maxAllowedMmap;
+        this.maxAllowedMmap = new AtomicInteger(maxAllowedMmap);
     }
 
     /**
@@ -68,20 +70,16 @@ public final class MmapLimiter
      * If another mmap slot is available, acquire it and return true.
      * Else return false.
      */
-    public synchronized boolean acquire()
+    public boolean acquire()
     {
-        if (maxAllowedMmap > 0) {
-            maxAllowedMmap--;
-            return true;
-        }
-        return false;
+        return maxAllowedMmap.getAndDecrement() > 0;
     }
 
     /**
      * Release a slot acquired by a previous call to Acquire() that returned true.
      */
-    public synchronized void release()
+    public void release()
     {
-        maxAllowedMmap++;
+        maxAllowedMmap.incrementAndGet();
     }
 }
