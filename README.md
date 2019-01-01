@@ -15,6 +15,11 @@ refactoring until everything is ported. For now, port will also maintain its api
 as close as possible to original [dain/leveldb](https://github.com/dain/leveldb/) 
 to enable merges and compare compatibility with [fusesource/leveldbjni](https://github.com/fusesource/leveldbjni/).
 
+### Missing port ([Google LevelDb 1.20](https://github.com/google/leveldb/releases/tag/v1.20))
+
+* Reverse iterator
+* Repairer
+
 ## API Usage:
 
 Recommended Package imports:
