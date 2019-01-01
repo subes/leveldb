@@ -291,6 +291,59 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
+    public void testGetIdenticalSnapshots(final Options options)
+            throws Exception
+    {
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir);
+        // Try with both a short key and a long key
+        for (int i = 0; i < 2; i++) {
+            String key = (i == 0) ? "foo" : "X" + Strings.repeat(" ", 199);
+            db.put(key, "v1");
+            Snapshot s1 = db.getSnapshot();
+            Snapshot s2 = db.getSnapshot();
+            Snapshot s3 = db.getSnapshot();
+            db.put(key, "v2");
+            assertEquals(db.get(key), "v2");
+            assertEquals(db.get(key, s1), "v1");
+            assertEquals(db.get(key, s2), "v1");
+            assertEquals(db.get(key, s3), "v1");
+            s1.close();
+            db.testCompactMemTable();
+            assertEquals(db.get(key), "v2");
+            assertEquals(db.get(key, s2), "v1");
+            s2.close();
+            assertEquals(db.get(key, s3), "v1");
+            s3.close();
+        }
+    }
+
+    @Test(dataProvider = "options")
+    public void testIterateOverEmptySnapshot(final Options options)
+            throws Exception
+    {
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir);
+        Snapshot snapshot = db.getSnapshot();
+        ReadOptions readOptions = new ReadOptions();
+        readOptions.snapshot(snapshot);
+        db.put("foo", "v1");
+        db.put("foo", "v2");
+
+        StringDbIterator iterator = db.iterator(readOptions);
+        iterator.seekToFirst();
+        assertFalse(iterator.hasNext());
+        iterator.close();
+
+        db.testCompactMemTable();
+
+        StringDbIterator iterator2 = db.iterator(readOptions);
+        iterator2.seekToFirst();
+        assertFalse(iterator2.hasNext());
+        iterator2.close();
+
+        snapshot.close();
+    }
+
+    @Test(dataProvider = "options")
     public void testGetLevel0Ordering(final Options options)
             throws Exception
     {
@@ -1675,6 +1728,11 @@ public class DbImplTest
         public StringDbIterator iterator()
         {
             return new StringDbIterator(db.iterator());
+        }
+
+        public StringDbIterator iterator(ReadOptions readOption)
+        {
+            return new StringDbIterator(db.iterator(readOption));
         }
 
         public Snapshot getSnapshot()
