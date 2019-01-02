@@ -15,7 +15,7 @@ refactoring until everything is ported. For now, port will also maintain its api
 as close as possible to original [dain/leveldb](https://github.com/dain/leveldb/) 
 to enable merges and compare compatibility with [fusesource/leveldbjni](https://github.com/fusesource/leveldbjni/).
 
-### Missing port ([Google LevelDb 1.20](https://github.com/google/leveldb/releases/tag/v1.20))
+### TODO port (from [Google LevelDb 1.20](https://github.com/google/leveldb/releases/tag/v1.20))
 
 * Reverse iterator
 * Repairer
@@ -34,13 +34,12 @@ Opening and closing the database.
 ```java
 Options options = new Options();
 options.createIfMissing(true);
-DB db = factory.open(new File("example"), options);
-try {
-  // Use the db in here....
-} finally {
-  // Make sure you close the db to shutdown the 
-  // database and avoid resource leaks.
-  db.close();
+DBFactory factory = new Iq80DBFactory();
+
+// Make sure to close the db to shutdown the 
+// and avoid resource leaks.
+try (DB db = factory.open(new File("example"), options)) {
+    // use db here....
 }
 ```
 
@@ -55,51 +54,51 @@ db.delete(bytes("Tampa"), wo);
 Performing Batch/Bulk/Atomic Updates.
 
 ```java
-WriteBatch batch = db.createWriteBatch();
-try {
+// Make sure you close the batch to avoid resource leaks.
+try (WriteBatch batch = db.createWriteBatch()) {
   batch.delete(bytes("Denver"));
   batch.put(bytes("Tampa"), bytes("green"));
   batch.put(bytes("London"), bytes("red"));
 
   db.write(batch);
-} finally {
-  // Make sure you close the batch to avoid resource leaks.
-  batch.close();
 }
 ```
 
 Iterating key/values.
 
 ```java
-DBIterator iterator = db.iterator();
-try {
+// Make sure you close the iterator to avoid resource leaks.
+try (DBIterator iterator = db.iterator()) {
   for(iterator.seekToFirst(); iterator.hasNext(); iterator.next()) {
     String key = asString(iterator.peekNext().getKey());
     String value = asString(iterator.peekNext().getValue());
-    System.out.println(key+" = "+value);
+    //do something
   }
-} finally {
-  // Make sure you close the iterator to avoid resource leaks.
-  iterator.close();
 }
 ```
 
 Working against a Snapshot view of the Database.
 
 ```java
-ReadOptions ro = new ReadOptions();
-ro.snapshot(db.getSnapshot());
-try {
-  
-  // All read operations will now use the same 
-  // consistent view of the data.
-  ... = db.iterator(ro);
-  ... = db.get(bytes("Tampa"), ro);
-
-} finally {
-  // Make sure you close the snapshot to avoid resource leaks.
-  ro.snapshot().close();
+// Make sure you close the snapshot to avoid resource leaks.
+try (Snapshot snapshot = db.getSnapshot()) {
+    ReadOptions ro = new ReadOptions();
+    ro.snapshot(snapshot);
+    
+    // All read operations will now use the same 
+    // consistent view of the data.
+    try (DBIterator iterator = db.iterator(ro)) {
+        //...
+    }
+    ... db.get(bytes("Tampa"), ro);
 }
+```
+
+Force a full DB compaction
+```java
+...
+db.compactRange(null, null);
+...
 ```
 
 Using a custom Comparator.
@@ -132,6 +131,14 @@ options.compressionType(CompressionType.NONE);
 DB db = factory.open(new File("example"), options);
 ```
 
+Configuring Filter Policy
+
+```java    
+Options options = new Options();
+options.filterPolicy(new BloomFilterPolicy(10)); //10 bit per key
+DB db = factory.open(new File("example"), options);
+```
+
 Configuring the Cache
 
 ```java    
@@ -156,14 +163,13 @@ System.out.println(stats);
 
 Getting informational log messages.
 
-```java
-Logger logger = new Logger() {
-  public void log(String message) {
-    System.out.println(message);
-  }
-};
+If logger is not configured, informational message will be saved in an UNBOUNDED log file
+in same directory than DB files. 
+
+To set your own logger strategy, set your own logger instance:
+```java    
 Options options = new Options();
-options.logger(logger);
+options.logger(new MyOwnLoggerImpl());
 DB db = factory.open(new File("example"), options);
 ```
 
@@ -182,15 +188,9 @@ of your `pom.xml`:
     <groupId>io.github.pcmind</groupId>
     <artifactId>leveldb</artifactId>
     <classifier>uber</classifier>
-    <version>0.11</version>
+    <version>0.12</version>
 </dependency>
 ```
-
-## Todo
-
-- Port reverse iteration
-- Port some minor API differences (like `max_file_size` Option)
-- Port some missing tests
 
 ## Performance
 
