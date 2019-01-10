@@ -667,6 +667,7 @@ public class VersionSet
         // changing the number of "level+1" files we pick up.
         if (!levelUpInputs.isEmpty()) {
             List<FileMetaData> expanded0 = getOverlappingInputs(level, allStart, allLimit);
+            long levelInputSize = totalFileSize(levelInputs);
             long levelUpInputSize = totalFileSize(levelUpInputs);
             long expanded0Size = totalFileSize(expanded0);
 
@@ -679,13 +680,14 @@ public class VersionSet
                 List<FileMetaData> expanded1 = getOverlappingInputs(level + 1, newStart, newLimit);
                 if (expanded1.size() == levelUpInputs.size()) {
                     options.logger().log(
-                            "Expanding@%s %s+%s to %s+%s",
+                            "Expanding@%s %s+%s (%s+%s bytes) to %s+%s (%s+%s bytes)",
                             level,
                             levelInputs.size(),
                             levelUpInputs.size(),
+                            levelInputSize, levelUpInputSize,
                             expanded0.size(),
-                            expanded1.size());
-                    smallest = newStart;
+                            expanded1.size(),
+                            expanded0Size, levelUpInputSize);
                     largest = newLimit;
                     levelInputs = expanded0;
                     levelUpInputs = expanded1;

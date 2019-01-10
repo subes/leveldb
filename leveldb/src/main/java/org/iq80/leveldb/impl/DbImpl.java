@@ -739,7 +739,6 @@ public class DbImpl
                 long originalSize = file.length();
                 final WritableFile writableFile = env.newAppendableFile(file);
                 options.logger().log("Reusing old log %s", file);
-                //Log(options_.info_log, "Reusing old log %s \n", fname.c_str());
                 this.log = Logs.createLogWriter(fileNumber, writableFile, originalSize);
                 if (mem != null) {
                     this.memTable = mem;
