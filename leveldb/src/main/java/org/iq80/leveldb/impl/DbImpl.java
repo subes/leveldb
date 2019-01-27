@@ -455,6 +455,16 @@ public class DbImpl
         if (backgroundException != null) {
             return;
         }
+        // This operation may be more costly that deleting files because DB directory may
+        // a lot of files
+        mutex.unlock();
+        final List<File> existingFiles;
+        try {
+            existingFiles = Filename.listFiles(databaseDir);
+        }
+        finally {
+            mutex.lock();
+        }
         // Make a set of all of the live files
         List<Long> live = new ArrayList<>(this.pendingOutputs);
         for (FileMetaData fileMetaData : versions.getLiveFiles()) {
@@ -462,7 +472,7 @@ public class DbImpl
         }
 
         final List<File> filesToDelete = new ArrayList<>();
-        for (File file : Filename.listFiles(databaseDir)) {
+        for (File file : existingFiles) {
             FileInfo fileInfo = Filename.parseFileName(file);
             if (fileInfo == null) {
                 continue;
@@ -504,15 +514,17 @@ public class DbImpl
                 filesToDelete.add(file);
             }
         }
-        // While deleting all files unblock other threads. All files being deleted
-        // have unique names which will not collide with newly created files and
-        // are therefore safe to delete while allowing other threads to proceed.
-        mutex.unlock();
-        try {
-            filesToDelete.forEach(File::delete);
-        }
-        finally {
-            mutex.lock();
+        if (!filesToDelete.isEmpty()) {
+            // While deleting all files unblock other threads. All files being deleted
+            // have unique names which will not collide with newly created files and
+            // are therefore safe to delete while allowing other threads to proceed.
+            mutex.unlock();
+            try {
+                filesToDelete.forEach(File::delete);
+            }
+            finally {
+                mutex.lock();
+            }
         }
     }
 
