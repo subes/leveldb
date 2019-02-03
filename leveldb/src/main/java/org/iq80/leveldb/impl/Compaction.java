@@ -17,12 +17,14 @@
  */
 package org.iq80.leveldb.impl;
 
+import com.google.common.collect.ImmutableList;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.Slice;
 
 import java.util.List;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.util.Objects.requireNonNull;
 import static org.iq80.leveldb.impl.DbConstants.NUM_LEVELS;
 
 // A Compaction encapsulates information about a compaction.
@@ -66,7 +68,7 @@ public class Compaction implements AutoCloseable
         this.level = level;
         this.levelInputs = levelInputs;
         this.levelUpInputs = levelUpInputs;
-        this.grandparents = grandparents;
+        this.grandparents = ImmutableList.copyOf(requireNonNull(grandparents, "grandparents is null"));
         this.maxOutputFileSize = maxOutputFileSize;
         this.inputs = new List[] {levelInputs, levelUpInputs};
         inputVersion.retain();
