@@ -15,17 +15,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.iterator;
 
-import org.iq80.leveldb.impl.InternalKey;
-import org.iq80.leveldb.impl.SeekingIterator;
-
-/**
- * <p>A common interface for internal iterators.</p>
- *
- * @author <a href="http://hiramchirino.com">Hiram Chirino</a>
- */
-public interface InternalIterator
-        extends SeekingIterator<InternalKey, Slice>
+enum Direction
 {
+    START_OF_ITERATOR(false),
+    RELEASED(false),
+    END_OF_ITERATOR(false),
+    REVERSE(true),
+    FORWARD(true);
+
+    private boolean valid;
+
+    Direction(boolean valid)
+    {
+        this.valid = valid;
+    }
+
+    public boolean isValid()
+    {
+        return valid;
+    }
 }

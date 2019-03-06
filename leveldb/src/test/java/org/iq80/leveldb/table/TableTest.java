@@ -26,14 +26,12 @@ import org.iq80.leveldb.impl.CountingHandlesEnv;
 import org.iq80.leveldb.impl.DbConstants;
 import org.iq80.leveldb.impl.DbImpl;
 import org.iq80.leveldb.impl.EnvImpl;
-import org.iq80.leveldb.impl.InternalEntry;
 import org.iq80.leveldb.impl.InternalKey;
 import org.iq80.leveldb.impl.InternalKeyComparator;
 import org.iq80.leveldb.impl.MemTable;
-import org.iq80.leveldb.impl.SeekingIterator;
-import org.iq80.leveldb.impl.SeekingIteratorAdapter;
 import org.iq80.leveldb.impl.ValueType;
-import org.iq80.leveldb.util.AbstractSeekingIterator;
+import org.iq80.leveldb.iterator.SeekingDBIteratorAdapter;
+import org.iq80.leveldb.iterator.SeekingIterator;
 import org.iq80.leveldb.util.FileUtils;
 import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.LRUCache;
@@ -53,17 +51,21 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.AbstractMap;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.function.Function;
 
 import static java.util.Arrays.asList;
+import static org.iq80.leveldb.impl.SequenceNumber.MAX_SEQUENCE_NUMBER;
+import static org.iq80.leveldb.iterator.IteratorTestUtils.entry;
 import static org.iq80.leveldb.util.SizeOf.SIZE_OF_INT;
 import static org.iq80.leveldb.util.TestUtils.asciiToSlice;
 import static org.testng.Assert.assertEquals;
@@ -141,19 +143,20 @@ public abstract class TableTest
         Block entries = new Block(Slices.allocate(SIZE_OF_INT), new BytewiseComparator());
 
         try (BlockIterator iterator = entries.iterator()) {
-            iterator.seekToFirst();
-            assertFalse(iterator.hasNext());
-            iterator.seekToLast();
-            assertFalse(iterator.hasNext());
-            iterator.seek(asciiToSlice("foo"));
-            assertFalse(iterator.hasNext());
+            assertFalse(iterator.next());
+            assertFalse(iterator.valid());
+            assertFalse(iterator.seekToFirst());
+            assertFalse(iterator.valid());
+            assertFalse(iterator.seekToLast());
+            assertFalse(iterator.valid());
+            assertFalse(iterator.seek(asciiToSlice("foo")));
+            assertFalse(iterator.valid());
         }
-
     }
 
     private static final class KVMap extends ConcurrentSkipListMap<Slice, Slice>
     {
-        public KVMap(UserComparator useComparator)
+        KVMap(UserComparator useComparator)
         {
             super(new STLLessThan(useComparator));
         }
@@ -161,6 +164,66 @@ public abstract class TableTest
         void add(String key, Slice value)
         {
             put(asciiToSlice(key), value);
+        }
+
+        KVIter iter()
+        {
+            ArrayList<Entry<Slice, Slice>> entries = Lists.newArrayList(entrySet());
+            return new KVIter(entries);
+        }
+
+        //avoid using an implementation we are testing
+        class KVIter
+        {
+            private final List<Entry<Slice, Slice>> entries;
+            private int index = -1;
+
+            KVIter(List<Entry<Slice, Slice>> entries)
+            {
+                this.entries = entries;
+            }
+
+            Optional<Entry<Slice, Slice>> next()
+            {
+                if (index < entries.size()) {
+                    index++;
+                }
+                return index < entries.size() ? Optional.of(entries.get(index)) : Optional.empty();
+            }
+
+            Optional<Entry<Slice, Slice>> prev()
+            {
+                if (index >= 0) {
+                    index--;
+                }
+                return index >= 0 ? Optional.of(entries.get(index)) : Optional.empty();
+            }
+
+            Optional<Entry<Slice, Slice>> entry()
+            {
+                return index >= 0 && index < entries.size() ? Optional.of(entries.get(index)) : Optional.empty();
+            }
+
+            KVIter seek(Slice key)
+            {
+                index = -1;
+                Optional<Entry<Slice, Slice>> next = next();
+                while (next.isPresent() && comparator().compare(next.get().getKey(), key) < 0) {
+                    next = next();
+                }
+                return this;
+            }
+
+            public Optional<Entry<Slice, Slice>> seekToLast()
+            {
+                if (entries.isEmpty()) {
+                    return Optional.empty();
+                }
+                else {
+                    index = entries.size() - 1;
+                    return Optional.of(entries.get(index));
+                }
+            }
         }
     }
 
@@ -533,14 +596,23 @@ public abstract class TableTest
         {
             Iterator<Map.Entry<Slice, Slice>> iterator;
             try (SeekingIterator<Slice, Slice> iter = constructor.iterator()) {
+                assertFalse(iter.valid());
                 iter.seekToFirst();
 
                 iterator = data.entrySet().iterator();
-                while (iter.hasNext()) {
-                    assertEqualsEntries(iter.next(), iterator.next());
-                }
+                iterator.forEachRemaining(e -> {
+                    assertTrue(iter.valid());
+                    assertEqualsEntries(entry(iter), e);
+                    iter.next();
+                });
+                assertFalse(iter.valid());
             }
-            assertFalse(iterator.hasNext());
+        }
+
+        private static void assertEqualsEntries(SeekingIterator<Slice, Slice> it, Optional<Map.Entry<Slice, Slice>> expected)
+        {
+            assertEquals(expected.isPresent(), it.valid());
+            expected.ifPresent(sliceSliceEntry -> assertEqualsEntries(entry(it), sliceSliceEntry));
         }
 
         private static void assertEqualsEntries(Map.Entry<Slice, Slice> actual, Map.Entry<Slice, Slice> expected)
@@ -549,65 +621,70 @@ public abstract class TableTest
             assertEquals(actual.getValue(), expected.getValue());
         }
 
+        private void testBackwardScan(KVMap data) throws IOException
+        {
+            try (SeekingIterator<Slice, Slice> iter = constructor.iterator()) {
+                assertFalse(iter.valid());
+                KVMap.KVIter iter1 = data.iter();
+                Optional<Map.Entry<Slice, Slice>> entry = iter1.seekToLast();
+                assertEquals(iter.seekToLast(), !data.isEmpty());
+                boolean prev = true;
+                while (entry.isPresent()) {
+                    assertTrue(prev);
+                    assertEqualsEntries(iter, entry);
+                    prev = iter.prev();
+                    entry = iter1.prev();
+                }
+            }
+        }
+
         private void testRandomAccess(KVMap data) throws IOException
         {
             try (SeekingIterator<Slice, Slice> iter = constructor.iterator()) {
+                assertFalse(iter.valid());
                 List<Slice> keys = Lists.newArrayList(data.keySet());
 
-                //assertFalse(iter.hasNext());
-                Iterator<Map.Entry<Slice, Slice>> modelIter = data.entrySet().iterator();
+                KVMap.KVIter modelIter = data.iter();
                 for (int i = 0; i < 200; i++) {
                     int toss = rnd.nextInt(5);
                     switch (toss) {
                         case 0: {
-                            if (iter.hasNext()) {
-                                Map.Entry<Slice, Slice> itNex = iter.next();
-                                Map.Entry<Slice, Slice> modelNex = modelIter.next();
-                                assertEqualsEntries(itNex, modelNex);
+                            if (iter.valid()) {
+                                iter.next();
+                                assertEqualsEntries(iter, modelIter.next());
                             }
                             break;
                         }
 
                         case 1: {
                             iter.seekToFirst();
-                            modelIter = data.entrySet().iterator();
-                            if (modelIter.hasNext()) {
-                                Map.Entry<Slice, Slice> itNex = iter.next();
-                                Map.Entry<Slice, Slice> modelNex = modelIter.next();
-                                assertEqualsEntries(itNex, modelNex);
-                            }
-                            break;
+                            modelIter = data.iter();
+                            assertEqualsEntries(iter, modelIter.next());
                         }
 
                         case 2: {
-                            modelIter = getEntryIterator(data, iter, keys);
+                            Slice key = pickRandomKey(rnd, keys);
+                            modelIter = data.iter().seek(key);
+                            iter.seek(key);
+                            assertEqualsEntries(iter, modelIter.entry());
                             break;
                         }
 
                         case 3: {
-                            //TODO implement prev to all iterators
+                            if (iter.valid()) {
+                                iter.prev();
+                                assertEqualsEntries(iter, modelIter.prev());
+                            }
+                            break;
                         }
                         case 4: {
-                            //TODO implement seekLast to all iterators
+                            iter.seekToLast();
+                            assertEqualsEntries(iter, modelIter.seekToLast());
                             break;
                         }
                     }
                 }
             }
-        }
-
-        private Iterator<Map.Entry<Slice, Slice>> getEntryIterator(KVMap data, SeekingIterator<Slice, Slice> iter, List<Slice> keys)
-        {
-            Iterator<Map.Entry<Slice, Slice>> modelIter;
-            Slice key = pickRandomKey(rnd, keys);
-            modelIter = data.tailMap(key).entrySet().iterator();
-            iter.seek(key);
-            if (modelIter.hasNext()) {
-                Map.Entry<Slice, Slice> itNex = iter.next();
-                Map.Entry<Slice, Slice> modelNex = modelIter.next();
-                assertEqualsEntries(itNex, modelNex);
-            }
-            return modelIter;
         }
 
         Slice pickRandomKey(Random rnd, List<Slice> keys)
@@ -669,7 +746,7 @@ public abstract class TableTest
             KVMap data = constructor.finish(options);
 
             testForwardScan(data);
-            //TODO TestBackwardScan(data);
+            testBackwardScan(data);
             testRandomAccess(data);
         }
 
@@ -738,42 +815,7 @@ public abstract class TableTest
         @Override
         public SeekingIterator<Slice, Slice> iterator()
         {
-            return new AbstractSeekingIterator<Slice, Slice>()
-            {
-                @Override
-                public void close() throws IOException
-                {
-                    if (iterator != null) {
-                        iterator.close();
-                    }
-                }
-
-                MemTable.MemTableIterator iterator = table.iterator();
-
-                @Override
-                protected void seekToFirstInternal()
-                {
-                    iterator.seekToFirst();
-                }
-
-                @Override
-                protected void seekInternal(Slice targetKey)
-                {
-                    iterator.seek(new InternalKey(targetKey, Integer.MAX_VALUE, ValueType.VALUE));
-                }
-
-                @Override
-                protected Map.Entry<Slice, Slice> getNextElement()
-                {
-                    if (iterator.hasNext()) {
-                        InternalEntry next = iterator.next();
-                        return new AbstractMap.SimpleEntry<>(next.getKey().getUserKey(), next.getValue());
-                    }
-                    else {
-                        return null;
-                    }
-                }
-            };
+            return new KeyConverterIterator<>(table.iterator(), InternalKey::getUserKey, k -> new InternalKey(k, MAX_SEQUENCE_NUMBER, ValueType.VALUE));
         }
     }
 
@@ -807,42 +849,7 @@ public abstract class TableTest
         @Override
         public SeekingIterator<Slice, Slice> iterator()
         {
-            return new AbstractSeekingIterator<Slice, Slice>()
-            {
-                @Override
-                public void close() throws IOException
-                {
-                    if (iterator != null) {
-                        iterator.close();
-                    }
-                }
-
-                SeekingIteratorAdapter iterator = db.iterator();
-
-                @Override
-                protected void seekToFirstInternal()
-                {
-                    iterator.seekToFirst();
-                }
-
-                @Override
-                protected void seekInternal(Slice targetKey)
-                {
-                    iterator.seek(targetKey.getBytes());
-                }
-
-                @Override
-                protected Map.Entry<Slice, Slice> getNextElement()
-                {
-                    if (iterator.hasNext()) {
-                        SeekingIteratorAdapter.DbEntry next = iterator.next();
-                        return new AbstractMap.SimpleEntry<>(next.getKeySlice(), next.getValueSlice());
-                    }
-                    else {
-                        return null;
-                    }
-                }
-            };
+            return SeekingDBIteratorAdapter.toSeekingIterator(db.iterator(), Slice::getBytes, Slice::new, Slice::new);
         }
 
         @Override
@@ -975,15 +982,21 @@ public abstract class TableTest
             }
             builder.finish();
         }
+        List<BlockEntry> reverseEntries = Lists.reverse(entries);
         Table table = null;
         try {
             table = createTable(file, new BytewiseComparator(), true, null);
 
             try (SeekingIterator<Slice, Slice> seekingIterator = table.iterator(new ReadOptions())) {
+                seekingIterator.seekToFirst();
                 BlockHelper.assertSequence(seekingIterator, entries);
 
                 seekingIterator.seekToFirst();
                 BlockHelper.assertSequence(seekingIterator, entries);
+                seekingIterator.prev();
+                BlockHelper.assertReverseSequence(seekingIterator, reverseEntries);
+                seekingIterator.seekToLast();
+                BlockHelper.assertReverseSequence(seekingIterator, reverseEntries);
 
                 long lastApproximateOffset = 0;
                 for (BlockEntry entry : entries) {
@@ -1000,6 +1013,12 @@ public abstract class TableTest
                     long approximateOffset = table.getApproximateOffsetOf(entry.getKey());
                     assertTrue(approximateOffset >= lastApproximateOffset);
                     lastApproximateOffset = approximateOffset;
+
+                    seekingIterator.seek(entry.getKey());
+                    List<BlockEntry> prevEntries = reverseEntries.subList(reverseEntries.indexOf(entry), reverseEntries.size());
+                    BlockHelper.assertReverseSequence(seekingIterator, prevEntries);
+                    assertTrue(seekingIterator.next());
+                    BlockHelper.assertSequence(seekingIterator, entries);
                 }
 
                 Slice endKey = Slices.wrappedBuffer(new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF});
@@ -1040,5 +1059,73 @@ public abstract class TableTest
             throws Exception
     {
         file.delete();
+    }
+
+    public static class KeyConverterIterator<K1, K2, V> implements SeekingIterator<K2, V>
+    {
+        private final SeekingIterator<K1, V> it;
+        private final Function<K1, K2> from;
+        private final Function<K2, K1> to;
+
+        public KeyConverterIterator(SeekingIterator<K1, V> it, Function<K1, K2> from, Function<K2, K1> to)
+        {
+            this.it = it;
+            this.from = from;
+            this.to = to;
+        }
+
+        @Override
+        public boolean valid()
+        {
+            return it.valid();
+        }
+
+        @Override
+        public boolean seekToFirst()
+        {
+            return it.seekToFirst();
+        }
+
+        @Override
+        public boolean seekToLast()
+        {
+            return it.seekToLast();
+        }
+
+        @Override
+        public boolean seek(K2 key)
+        {
+            return it.seek(to.apply(key));
+        }
+
+        @Override
+        public boolean next()
+        {
+            return it.next();
+        }
+
+        @Override
+        public boolean prev()
+        {
+            return it.prev();
+        }
+
+        @Override
+        public K2 key()
+        {
+            return from.apply(it.key());
+        }
+
+        @Override
+        public V value()
+        {
+            return it.value();
+        }
+
+        @Override
+        public void close() throws IOException
+        {
+            it.close();
+        }
     }
 }

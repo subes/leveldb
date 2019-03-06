@@ -32,7 +32,7 @@ import org.iq80.leveldb.table.Table;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.ILRUCache;
-import org.iq80.leveldb.util.InternalTableIterator;
+import org.iq80.leveldb.iterator.InternalTableIterator;
 import org.iq80.leveldb.util.LRUCache;
 import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.Slice;

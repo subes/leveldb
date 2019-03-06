@@ -86,11 +86,6 @@ public class BlockBuilder
             return block.size();
         }
 
-        // no records is just a single int
-        if (block.size() == 0) {
-            return SIZE_OF_INT;
-        }
-
         return block.size() +                              // raw data buffer
                 restartPositions.size() * SIZE_OF_INT +    // restart positions
                 SIZE_OF_INT;                               // restart position size
@@ -160,14 +155,9 @@ public class BlockBuilder
     {
         if (!finished) {
             finished = true;
-
-            if (entryCount > 0) {
-                restartPositions.write(block);
-                block.writeInt(restartPositions.size());
-            }
-            else {
-                block.writeInt(0);
-            }
+            //restart position at least one
+            restartPositions.write(block);
+            block.writeInt(restartPositions.size());
         }
         return block.slice();
     }

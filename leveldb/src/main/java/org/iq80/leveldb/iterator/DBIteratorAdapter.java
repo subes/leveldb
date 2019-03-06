@@ -15,26 +15,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.impl;
+package org.iq80.leveldb.iterator;
 
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.DBIterator;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
 
-import java.io.IOException;
 import java.util.Map.Entry;
+import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static java.util.Objects.requireNonNull;
 
-public class SeekingIteratorAdapter
+public class DBIteratorAdapter
         implements DBIterator
 {
+    private static final String ILLEGAL_STATE = "Illegal use of iterator after release";
     private final SnapshotSeekingIterator seekingIterator;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private Direction direction = Direction.FORWARD;
+    private DbEntry elem;
 
-    public SeekingIteratorAdapter(SnapshotSeekingIterator seekingIterator)
+    public DBIteratorAdapter(SnapshotSeekingIterator seekingIterator)
     {
         this.seekingIterator = seekingIterator;
     }
@@ -42,31 +45,57 @@ public class SeekingIteratorAdapter
     @Override
     public void seekToFirst()
     {
-        seekingIterator.seekToFirst();
+        if (direction == Direction.RELEASED) {
+            throw new DBException(ILLEGAL_STATE);
+        }
+        direction = Direction.FORWARD;
+        elem = seekingIterator.seekToFirst() ? new DbEntry(seekingIterator.key(), seekingIterator.value()) : null;
     }
 
     @Override
     public void seek(byte[] targetKey)
     {
-        seekingIterator.seek(Slices.wrappedBuffer(targetKey));
+        if (direction == Direction.RELEASED) {
+            throw new DBException(ILLEGAL_STATE);
+        }
+        direction = Direction.FORWARD;
+        elem = seekingIterator.seek(Slices.wrappedBuffer(targetKey)) ? new DbEntry(seekingIterator.key(), seekingIterator.value()) : null;
     }
 
     @Override
     public boolean hasNext()
     {
-        return seekingIterator.hasNext();
+        if (direction == Direction.RELEASED) {
+            throw new DBException(ILLEGAL_STATE);
+        }
+        if (direction != Direction.FORWARD) {
+            elem = null;
+            direction = Direction.FORWARD;
+        }
+        if (elem == null) {
+            elem = seekingIterator.next() ? new DbEntry(seekingIterator.key(), seekingIterator.value()) : null;
+        }
+        return elem != null;
     }
 
     @Override
     public DbEntry next()
     {
-        return adapt(seekingIterator.next());
+        if (!hasNext()) {
+            throw new NoSuchElementException();
+        }
+        DbEntry elem = this.elem;
+        this.elem = null;
+        return elem;
     }
 
     @Override
     public DbEntry peekNext()
     {
-        return adapt(seekingIterator.peek());
+        if (!hasNext()) {
+            throw new NoSuchElementException();
+        }
+        return elem;
     }
 
     @Override
@@ -75,12 +104,8 @@ public class SeekingIteratorAdapter
         // This is an end user API.. he might screw up and close multiple times.
         // but we don't want the close multiple times as reference counts go bad.
         if (closed.compareAndSet(false, true)) {
-            try {
-                seekingIterator.close();
-            }
-            catch (IOException e) {
-                throw new DBException(e);
-            }
+            direction = Direction.RELEASED;
+            seekingIterator.close();
         }
     }
 
@@ -90,37 +115,50 @@ public class SeekingIteratorAdapter
         throw new UnsupportedOperationException();
     }
 
-    private DbEntry adapt(Entry<Slice, Slice> entry)
-    {
-        return new DbEntry(entry.getKey(), entry.getValue());
-    }
-
-    //
-    // todo Implement reverse iterator
-    //
-
     @Override
     public void seekToLast()
     {
-        throw new UnsupportedOperationException();
+        if (direction == Direction.RELEASED) {
+            throw new DBException(ILLEGAL_STATE);
+        }
+        direction = Direction.REVERSE;
+        elem = seekingIterator.seekToLast() ? new DbEntry(seekingIterator.key(), seekingIterator.value()) : null;
     }
 
     @Override
     public boolean hasPrev()
     {
-        throw new UnsupportedOperationException();
+        if (direction == Direction.RELEASED) {
+            throw new DBException(ILLEGAL_STATE);
+        }
+        if (direction != Direction.REVERSE) {
+            elem = null;
+            direction = Direction.REVERSE;
+        }
+        if (elem == null) {
+            elem = seekingIterator.prev() ? new DbEntry(seekingIterator.key(), seekingIterator.value()) : null;
+        }
+        return elem != null;
     }
 
     @Override
     public DbEntry prev()
     {
-        throw new UnsupportedOperationException();
+        if (!hasPrev()) {
+            throw new NoSuchElementException();
+        }
+        DbEntry elem = this.elem;
+        this.elem = null;
+        return elem;
     }
 
     @Override
     public DbEntry peekPrev()
     {
-        throw new UnsupportedOperationException();
+        if (!hasPrev()) {
+            throw new NoSuchElementException();
+        }
+        return this.elem;
     }
 
     public static class DbEntry

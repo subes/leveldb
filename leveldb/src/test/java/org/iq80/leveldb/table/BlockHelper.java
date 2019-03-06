@@ -17,7 +17,8 @@
  */
 package org.iq80.leveldb.table;
 
-import org.iq80.leveldb.impl.SeekingIterator;
+import com.google.common.collect.Iterables;
+import org.iq80.leveldb.iterator.SeekingIterator;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
 import org.testng.Assert;
@@ -26,14 +27,16 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
+import java.util.function.Function;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.iq80.leveldb.iterator.IteratorTestUtils.entry;
 import static org.iq80.leveldb.util.SizeOf.SIZE_OF_BYTE;
 import static org.iq80.leveldb.util.SizeOf.SIZE_OF_INT;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertThrows;
 import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.fail;
 
 public final class BlockHelper
 {
@@ -44,7 +47,7 @@ public final class BlockHelper
     public static int estimateBlockSize(int blockRestartInterval, List<BlockEntry> entries)
     {
         if (entries.isEmpty()) {
-            return SIZE_OF_INT;
+            return SIZE_OF_INT * 2; //restart[0] + restart size
         }
         int restartCount = (int) Math.ceil(1.0 * entries.size() / blockRestartInterval);
         return estimateEntriesSize(blockRestartInterval, entries) +
@@ -58,29 +61,38 @@ public final class BlockHelper
         assertSequence(seekingIterator, Arrays.asList(entries));
     }
 
-    public static <K, V> void assertSequence(SeekingIterator<K, V> seekingIterator, Iterable<? extends Entry<K, V>> entries)
+    @SafeVarargs
+    public static <K, V> void assertReverseSequence(SeekingIterator<K, V> seekingIterator, Entry<K, V>... entries)
+    {
+        assertReverseSequence(seekingIterator, Arrays.asList(entries));
+    }
+
+    private static <K, V> void assertSequence(SeekingIterator<K, V> seekingIterator, Iterable<? extends Entry<K, V>> entries, Function<SeekingIterator<K, V>, Boolean> next)
     {
         Assert.assertNotNull(seekingIterator, "blockIterator is not null");
-
+        boolean valid = true;
         for (Entry<K, V> entry : entries) {
-            assertTrue(seekingIterator.hasNext());
-            assertEntryEquals(seekingIterator.peek(), entry);
-            assertEntryEquals(seekingIterator.next(), entry);
+            assertTrue(valid, "Last method should have return true");
+            assertTrue(seekingIterator.valid(), "Expecting next element to be " + entry);
+            assertEntryEquals(entry(seekingIterator), entry);
+            valid = next.apply(seekingIterator);
         }
-        assertFalse(seekingIterator.hasNext());
+        assertFalse(valid && !Iterables.isEmpty(entries), "Last method should have return false");
+        assertFalse(seekingIterator.valid());
 
-        try {
-            seekingIterator.peek();
-            fail("expected NoSuchElementException");
-        }
-        catch (NoSuchElementException expected) {
-        }
-        try {
-            seekingIterator.next();
-            fail("expected NoSuchElementException");
-        }
-        catch (NoSuchElementException expected) {
-        }
+        assertFalse(next.apply(seekingIterator), "expected no more elements");
+        assertThrows(NoSuchElementException.class, seekingIterator::key);
+        assertThrows(NoSuchElementException.class, seekingIterator::value);
+    }
+
+    public static <K, V> void assertReverseSequence(SeekingIterator<K, V> seekingIterator, Iterable<? extends Entry<K, V>> entries)
+    {
+        assertSequence(seekingIterator, entries, SeekingIterator::prev);
+    }
+
+    public static <K, V> void assertSequence(SeekingIterator<K, V> seekingIterator, Iterable<? extends Entry<K, V>> entries)
+    {
+        assertSequence(seekingIterator, entries, SeekingIterator::next);
     }
 
     public static <K, V> void assertEntryEquals(Entry<K, V> actual, Entry<K, V> expected)
@@ -89,7 +101,10 @@ public final class BlockHelper
             assertSliceEquals((Slice) actual.getKey(), (Slice) expected.getKey());
             assertSliceEquals((Slice) actual.getValue(), (Slice) expected.getValue());
         }
-        assertEquals(actual, expected);
+        else {
+            assertEquals(actual.getKey(), expected.getKey());
+            assertEquals(actual.getValue(), expected.getValue());
+        }
     }
 
     public static void assertSliceEquals(Slice actual, Slice expected)

@@ -15,13 +15,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.impl;
+package org.iq80.leveldb.iterator;
 
-import org.iq80.leveldb.ReadOptions;
+import org.iq80.leveldb.impl.InternalKey;
+import org.iq80.leveldb.util.Slice;
 
-import java.io.IOException;
-
-public interface SeekingIterable<K, V>
+/**
+ * <p>A common interface for internal iterators.</p>
+ *
+ * @author <a href="http://hiramchirino.com">Hiram Chirino</a>
+ */
+public interface InternalIterator
+        extends SeekingIterator<InternalKey, Slice>
 {
-    SeekingIterator<K, V> iterator(ReadOptions options) throws IOException;
 }

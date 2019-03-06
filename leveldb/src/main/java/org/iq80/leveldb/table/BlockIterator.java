@@ -17,7 +17,8 @@
  */
 package org.iq80.leveldb.table;
 
-import org.iq80.leveldb.impl.SeekingIterator;
+import org.iq80.leveldb.iterator.ASeekingIterator;
+import org.iq80.leveldb.iterator.SliceIterator;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceInput;
 import org.iq80.leveldb.util.SliceOutput;
@@ -25,115 +26,111 @@ import org.iq80.leveldb.util.Slices;
 import org.iq80.leveldb.util.VariableLengthQuantity;
 
 import java.util.Comparator;
-import java.util.NoSuchElementException;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkPositionIndex;
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.Objects.requireNonNull;
-import static org.iq80.leveldb.util.SizeOf.SIZE_OF_INT;
 
-public class BlockIterator
-        implements SeekingIterator<Slice, Slice>
+public final class BlockIterator extends ASeekingIterator<Slice, Slice>
+        implements SliceIterator
 {
     private final SliceInput data;
-    private final Slice restartPositions;
-    private final int restartCount;
+    private final RestartPositions restartPositions;
     private final Comparator<Slice> comparator;
 
-    private BlockEntry nextEntry;
+    private int current;
+    private int restartIndex;
+    private Slice key;
+    private Slice value;
 
     public BlockIterator(Slice data, Slice restartPositions, Comparator<Slice> comparator)
     {
         requireNonNull(data, "data is null");
         requireNonNull(restartPositions, "restartPositions is null");
-        checkArgument(restartPositions.length() % SIZE_OF_INT == 0, "restartPositions.readableBytes() must be a multiple of %s", SIZE_OF_INT);
         requireNonNull(comparator, "comparator is null");
 
-        this.data = data.input();
+        this.data = requireNonNull(data.input(), "data input is null");
 
-        this.restartPositions = restartPositions.slice();
-        restartCount = this.restartPositions.length() / SIZE_OF_INT;
-
+        this.restartPositions = new RestartPositions(restartPositions);
+        checkArgument(this.restartPositions.size() > 0,
+                "At least one restart position is expected");
         this.comparator = comparator;
-
-        seekToFirst();
     }
 
     @Override
-    public boolean hasNext()
+    protected Slice internalKey()
     {
-        return nextEntry != null;
+        return key;
     }
 
     @Override
-    public BlockEntry peek()
+    protected Slice internalValue()
     {
-        if (!hasNext()) {
-            throw new NoSuchElementException();
-        }
-        return nextEntry;
+        return value;
     }
 
     @Override
-    public BlockEntry next()
+    protected boolean internalNext(boolean switchDirection)
     {
-        if (!hasNext()) {
-            throw new NoSuchElementException();
-        }
-
-        BlockEntry entry = nextEntry;
-
-        if (!data.isReadable()) {
-            nextEntry = null;
-        }
-        else {
-            // read entry at current data position
-            nextEntry = readEntry(data, nextEntry);
-        }
-
-        return entry;
+        return parseNextKey();
     }
 
     @Override
-    public void remove()
+    protected boolean internalPrev(boolean switchDirection)
     {
-        throw new UnsupportedOperationException();
+        // Scan backwards to a restart point before current
+        final int original = current;
+        while (restartPositions.get(restartIndex) >= original) {
+            if (restartIndex == 0) {
+                current = Integer.MAX_VALUE;
+                return false;
+            }
+            restartIndex--;
+        }
+
+        seekToRestartPoint(restartIndex);
+        do {
+            // Loop until end of current entry hits the start of original entry
+        } while (parseNextKey() && data.position() < original);
+        return valid();
+    }
+
+    private void seekToRestartPoint(int index)
+    {
+        this.restartIndex = index;
+        this.data.setPosition(restartPositions.get(restartIndex));
+        this.key = null;
+        this.value = null;
     }
 
     /**
      * Repositions the iterator so the beginning of this block.
      */
     @Override
-    public void seekToFirst()
+    protected boolean internalSeekToFirst()
     {
-        if (restartCount > 0) {
-            seekToRestartPosition(0);
-        }
+        seekToRestartPosition(0);
+        return parseNextKey();
     }
 
-    public void seekToLast()
+    protected boolean internalSeekToLast()
     {
-        if (restartCount > 0) {
-            seekToRestartPosition(restartCount - 1);
-            while (peek() != null) {
-                next();
-            }
-        }
+        seekToRestartPoint(restartPositions.size() - 1); // we have at lease one restart
+        boolean valid;
+        do {
+            valid = parseNextKey();
+        } while (valid && data.isReadable());
+        return valid;
     }
 
     /**
      * Repositions the iterator so the key of the next BlockElement returned greater than or equal to the specified targetKey.
      */
     @Override
-    public void seek(Slice targetKey)
+    protected boolean internalSeek(Slice targetKey)
     {
-        if (restartCount == 0) {
-            return;
-        }
-
         int left = 0;
-        int right = restartCount - 1;
+        int right = restartPositions.size() - 1;
 
         // binary search restart positions to find the restart position immediately before the targetKey
         while (left < right) {
@@ -141,7 +138,9 @@ public class BlockIterator
 
             seekToRestartPosition(mid);
 
-            if (comparator.compare(nextEntry.getKey(), targetKey) < 0) {
+            Slice key = readFirstKeyAtRestartPoint();
+
+            if (comparator.compare(key, targetKey) < 0) {
                 // key at mid is smaller than targetKey.  Therefore all restart
                 // blocks before mid are uninteresting.
                 left = mid;
@@ -154,12 +153,14 @@ public class BlockIterator
         }
 
         // linear search (within restart block) for first key greater than or equal to targetKey
-        for (seekToRestartPosition(left); nextEntry != null; next()) {
-            if (comparator.compare(nextEntry.getKey(), targetKey) >= 0) {
-                break;
+        seekToRestartPosition(left);
+        while (parseNextKey()) { //load this.key
+            if (comparator.compare(key, targetKey) >= 0) {
+                return true;
             }
         }
-
+        current = data.position();
+        return false;
     }
 
     /**
@@ -169,17 +170,24 @@ public class BlockIterator
      */
     private void seekToRestartPosition(int restartPosition)
     {
-        checkPositionIndex(restartPosition, restartCount, "restartPosition");
-
         // seek data readIndex to the beginning of the restart block
-        int offset = restartPositions.getInt(restartPosition * SIZE_OF_INT);
+        this.restartIndex = restartPosition;
+        this.key = null;
+        this.value = null;
+        int offset = restartPositions.get(restartPosition);
         data.setPosition(offset);
+        current = offset;
+    }
 
-        // clear the entries to assure key is not prefixed
-        nextEntry = null;
-
-        // read the entry
-        nextEntry = readEntry(data, null);
+    private Slice readFirstKeyAtRestartPoint()
+    {
+        checkState(VariableLengthQuantity.readVariableLengthInt(data) == 0,
+                "First restart position can't have a shared ");
+        current = data.position();
+        int nonSharedKeyLength = VariableLengthQuantity.readVariableLengthInt(data);
+        //data size
+        VariableLengthQuantity.readVariableLengthInt(data);
+        return data.readSlice(nonSharedKeyLength);
     }
 
     /**
@@ -189,10 +197,12 @@ public class BlockIterator
      *
      * @return true if an entry was read
      */
-    private static BlockEntry readEntry(SliceInput data, BlockEntry previousEntry)
+    private boolean parseNextKey()
     {
-        requireNonNull(data, "data is null");
-
+        current = data.position();
+        if (!data.isReadable()) {
+            return false;
+        }
         // read entry header
         int sharedKeyLength = VariableLengthQuantity.readVariableLengthInt(data);
         int nonSharedKeyLength = VariableLengthQuantity.readVariableLengthInt(data);
@@ -202,19 +212,21 @@ public class BlockIterator
         Slice key = Slices.allocate(sharedKeyLength + nonSharedKeyLength);
         SliceOutput sliceOutput = key.output();
         if (sharedKeyLength > 0) {
-            checkState(previousEntry != null, "Entry has a shared key but no previous entry was provided");
-            sliceOutput.writeBytes(previousEntry.getKey(), 0, sharedKeyLength);
+            checkState(this.key != null, "Entry has a shared key but no previous entry was provided");
+            sliceOutput.writeBytes(this.key, 0, sharedKeyLength);
         }
         sliceOutput.writeBytes(data, nonSharedKeyLength);
 
         // read value
         Slice value = data.readSlice(valueLength);
 
-        return new BlockEntry(key, value);
+        this.key = key;
+        this.value = value;
+        return true;
     }
 
     @Override
-    public void close()
+    protected void internalClose()
     {
         //na
     }

@@ -21,6 +21,7 @@ import com.google.common.base.Strings;
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.Range;
+import org.iq80.leveldb.iterator.DBIteratorAdapter;
 import org.iq80.leveldb.util.FileUtils;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -77,10 +78,10 @@ public class AutoCompactTest
         byte[] limitKey = key(n);
         for (int read = 0; true; read++) {
             assertTrue(read < 100, "Taking too long to compact");
-            try (SeekingIteratorAdapter iterator = db.iterator()) {
+            try (DBIteratorAdapter iterator = db.iterator()) {
                 iterator.seekToFirst();
                 while (iterator.hasNext()) {
-                    final SeekingIteratorAdapter.DbEntry next = iterator.next();
+                    final DBIteratorAdapter.DbEntry next = iterator.next();
                     if (new String(next.getKey()).compareTo(new String(limitKey)) >= 0) {
                         break;
                     }

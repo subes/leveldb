@@ -19,12 +19,10 @@ package org.iq80.leveldb.impl;
 
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterators;
 import com.google.common.primitives.UnsignedBytes;
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBComparator;
-import org.iq80.leveldb.DBIterator;
 import org.iq80.leveldb.Logger;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.Range;
@@ -32,8 +30,11 @@ import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.Snapshot;
 import org.iq80.leveldb.WriteBatch;
 import org.iq80.leveldb.WriteOptions;
+import org.iq80.leveldb.iterator.InternalIterator;
+import org.iq80.leveldb.iterator.IteratorTestUtils;
+import org.iq80.leveldb.iterator.SeekingDBIteratorAdapter;
+import org.iq80.leveldb.iterator.SeekingIterator;
 import org.iq80.leveldb.table.BloomFilterPolicy;
-import org.iq80.leveldb.util.DbIterator;
 import org.iq80.leveldb.util.FileUtils;
 import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.SequentialFile;
@@ -46,7 +47,6 @@ import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
-import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -69,13 +69,18 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.asList;
 import static org.iq80.leveldb.CompressionType.NONE;
 import static org.iq80.leveldb.impl.DbConstants.NUM_LEVELS;
+import static org.iq80.leveldb.iterator.IteratorTestUtils.assertInvalid;
+import static org.iq80.leveldb.iterator.IteratorTestUtils.assertValidKV;
+import static org.iq80.leveldb.iterator.IteratorTestUtils.entry;
 import static org.iq80.leveldb.table.BlockHelper.afterString;
+import static org.iq80.leveldb.table.BlockHelper.assertReverseSequence;
 import static org.iq80.leveldb.table.BlockHelper.assertSequence;
 import static org.iq80.leveldb.table.BlockHelper.beforeString;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertNull;
+import static org.testng.Assert.assertThrows;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
@@ -328,16 +333,16 @@ public class DbImplTest
         db.put("foo", "v1");
         db.put("foo", "v2");
 
-        StringDbIterator iterator = db.iterator(readOptions);
+        SeekingIterator<String, String> iterator = db.iterator(readOptions);
         iterator.seekToFirst();
-        assertFalse(iterator.hasNext());
+        assertFalse(iterator.valid());
         iterator.close();
 
         db.testCompactMemTable();
 
-        StringDbIterator iterator2 = db.iterator(readOptions);
+        SeekingIterator<String, String> iterator2 = db.iterator(readOptions);
         iterator2.seekToFirst();
-        assertFalse(iterator2.hasNext());
+        assertFalse(iterator2.valid());
         iterator2.close();
 
         snapshot.close();
@@ -400,7 +405,7 @@ public class DbImplTest
             throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
-        StringDbIterator iterator = db.iterator();
+        SeekingIterator<String, String> iterator = db.iterator();
 
         iterator.seekToFirst();
         assertNoNextElement(iterator);
@@ -417,9 +422,32 @@ public class DbImplTest
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
         db.put("a", "va");
 
-        StringDbIterator iterator = db.iterator();
-        assertSequence(iterator, immutableEntry("a", "va"));
-        iterator.close();
+        try (SeekingIterator<String, String> iterator = db.iterator()) {
+            iterator.seekToFirst();
+            assertValidKV(iterator, "a", "va");
+            assertInvalid(iterator.next(), iterator);
+            assertTrue(iterator.seekToFirst());
+            assertValidKV(iterator, "a", "va");
+            assertInvalid(iterator.prev(), iterator);
+
+            assertTrue(iterator.seekToLast());
+            assertValidKV(iterator, "a", "va");
+            assertInvalid(iterator.next(), iterator);
+            assertTrue(iterator.seekToLast());
+            assertValidKV(iterator, "a", "va");
+
+            assertInvalid(iterator.prev(), iterator);
+
+            assertTrue(iterator.seek(""));
+            assertValidKV(iterator, "a", "va");
+            assertInvalid(iterator.next(), iterator);
+
+            assertTrue(iterator.seek("a"));
+            assertValidKV(iterator, "a", "va");
+            assertInvalid(iterator.next(), iterator);
+
+            assertInvalid(iterator.seek("b"), iterator);
+        }
     }
 
     @Test(dataProvider = "options")
@@ -431,29 +459,75 @@ public class DbImplTest
         db.put("b", "vb");
         db.put("c", "vc");
 
-        StringDbIterator iterator = db.iterator();
-        assertSequence(iterator,
-                immutableEntry("a", "va"),
-                immutableEntry("b", "vb"),
-                immutableEntry("c", "vc"));
-        iterator.seekToFirst();
-        assertSequence(iterator,
-                immutableEntry("a", "va"),
-                immutableEntry("b", "vb"),
-                immutableEntry("c", "vc"));
+        try (SeekingIterator<String, String> iterator = db.iterator()) {
+            assertTrue(iterator.seekToFirst());
+            assertValidKV(iterator, "a", "va");
+            assertTrue(iterator.next());
+            assertValidKV(iterator, "b", "vb");
+            assertTrue(iterator.next());
+            assertValidKV(iterator, "c", "vc");
+            assertInvalid(iterator.next(), iterator);
+            assertTrue(iterator.seekToFirst());
+            assertValidKV(iterator, "a", "va");
+            assertInvalid(iterator.prev(), iterator);
 
-        // Make sure iterator stays at snapshot
-        db.put("a", "va2");
-        db.put("a2", "va3");
-        db.put("b", "vb2");
-        db.put("c", "vc2");
+            assertTrue(iterator.seekToLast());
+            assertValidKV(iterator, "c", "vc");
+            assertTrue(iterator.prev());
+            assertValidKV(iterator, "b", "vb");
+            assertTrue(iterator.prev());
+            assertValidKV(iterator, "a", "va");
+            assertInvalid(iterator.prev(), iterator);
+            assertTrue(iterator.seekToLast());
+            assertValidKV(iterator, "c", "vc");
+            assertInvalid(iterator.next(), iterator);
 
-        iterator.seekToFirst();
-        assertSequence(iterator,
-                immutableEntry("a", "va"),
-                immutableEntry("b", "vb"),
-                immutableEntry("c", "vc"));
-        iterator.close();
+            assertTrue(iterator.seek(""));
+            assertValidKV(iterator, "a", "va");
+            assertTrue(iterator.seek("a"));
+            assertValidKV(iterator, "a", "va");
+            assertTrue(iterator.seek("ax"));
+            assertValidKV(iterator, "b", "vb");
+            assertTrue(iterator.seek("b"));
+            assertValidKV(iterator, "b", "vb");
+            assertInvalid(iterator.seek("z"), iterator);
+
+            // Switch from reverse to forward
+            assertTrue(iterator.seekToLast());
+            assertTrue(iterator.prev());
+            assertTrue(iterator.prev());
+            assertTrue(iterator.next());
+            assertValidKV(iterator, "b", "vb");
+
+            // Switch from forward to reverse
+            assertTrue(iterator.seekToFirst());
+            assertTrue(iterator.next());
+            assertTrue(iterator.next());
+            assertTrue(iterator.prev());
+            assertValidKV(iterator, "b", "vb");
+
+            // Make sure iter stays at snapshot
+            db.put("a", "va2");
+            db.put("a2", "va3");
+            db.put("b", "vb2");
+            db.put("c", "vc2");
+            db.delete("b");
+            assertTrue(iterator.seekToFirst());
+            assertValidKV(iterator, "a", "va");
+            assertTrue(iterator.next());
+            assertValidKV(iterator, "b", "vb");
+            assertTrue(iterator.next());
+            assertValidKV(iterator, "c", "vc");
+            assertInvalid(iterator.next(), iterator);
+            assertTrue(iterator.seekToLast());
+            assertValidKV(iterator, "c", "vc");
+            assertTrue(iterator.prev());
+            assertValidKV(iterator, "b", "vb");
+            assertTrue(iterator.prev());
+            assertValidKV(iterator, "a", "va");
+            assertInvalid(iterator.prev(), iterator);
+
+        }
     }
 
     @Test(dataProvider = "options")
@@ -466,14 +540,25 @@ public class DbImplTest
         db.put("c", "vc");
         db.put("d", Strings.repeat("d", 100000));
         db.put("e", Strings.repeat("e", 100000));
-        StringDbIterator iterator = db.iterator();
-        assertSequence(iterator,
-                immutableEntry("a", "va"),
-                immutableEntry("b", Strings.repeat("b", 100000)),
-                immutableEntry("c", "vc"),
-                immutableEntry("d", Strings.repeat("d", 100000)),
-                immutableEntry("e", Strings.repeat("e", 100000)));
-        iterator.close();
+        try (SeekingIterator<String, String> iterator = db.iterator()) {
+            assertTrue(iterator.seekToFirst());
+            assertSequence(iterator,
+                    immutableEntry("a", "va"),
+                    immutableEntry("b", Strings.repeat("b", 100000)),
+                    immutableEntry("c", "vc"),
+                    immutableEntry("d", Strings.repeat("d", 100000)),
+                    immutableEntry("e", Strings.repeat("e", 100000)));
+
+            iterator.seekToLast();
+            assertReverseSequence(iterator,
+                    immutableEntry("e", Strings.repeat("e", 100000)),
+                    immutableEntry("d", Strings.repeat("d", 100000)),
+                    immutableEntry("c", "vc"),
+                    immutableEntry("b", Strings.repeat("b", 100000)),
+                    immutableEntry("a", "va")
+            );
+            assertFalse(iterator.valid());
+        }
 
     }
 
@@ -487,11 +572,11 @@ public class DbImplTest
         db.put("a", "va");
         db.delete("b");
         assertNull(db.get("b"));
-        StringDbIterator iterator = db.iterator();
+        SeekingIterator<String, String> iterator = db.iterator();
         iterator.seek("c");
-        assertSequence(iterator,
-                immutableEntry("c", "vc")
-        );
+        assertValidKV(iterator, "c", "vc");
+        assertTrue(iterator.prev());
+        assertValidKV(iterator, "a", "va");
         iterator.close();
     }
 
@@ -781,16 +866,17 @@ public class DbImplTest
         DbStringWrapper db = new DbStringWrapper(options, databaseDir);
         db.put("foo", "hello");
 
-        StringDbIterator iterator = db.iterator();
+        try (SeekingIterator<String, String> iterator = db.iterator()) {
+            iterator.seekToFirst();
 
-        db.put("foo", "newvalue1");
-        for (int i = 0; i < 100; i++) {
-            db.put(key(i), key(i) + longString(100000, 'v'));
+            db.put("foo", "newvalue1");
+            for (int i = 0; i < 100; i++) {
+                db.put(key(i), key(i) + longString(100000, 'v'));
+            }
+            db.put("foo", "newvalue1");
+
+            assertSequence(iterator, immutableEntry("foo", "hello"));
         }
-        db.put("foo", "newvalue1");
-
-        assertSequence(iterator, immutableEntry("foo", "hello"));
-        iterator.close();
     }
 
     @Test(dataProvider = "options")
@@ -891,13 +977,19 @@ public class DbImplTest
 
     private String toString(DbStringWrapper db)
     {
-        StringDbIterator iterator = db.iterator();
-        String s = Iterators.toString(iterator);
-        iterator.close();
-        return s;
+        String s;
+        try (SeekingIterator<String, String> iterator = db.iterator()) {
+            iterator.seekToFirst();
+            s = IteratorTestUtils.toString(iterator);
+            return s;
+        }
+        catch (IOException e) {
+            Assert.fail(e.getMessage());
+            return "";
+        }
     }
 
-    @Test
+    @Test(invocationCount = 10)
     public void testL0CompactionGoogleBugIssue44b() throws Exception
     {
         DbStringWrapper db = new DbStringWrapper(new Options().createIfMissing(true), databaseDir);
@@ -1106,14 +1198,15 @@ public class DbImplTest
             db.put(entry.getKey(), entry.getValue());
         }
 
-        StringDbIterator seekingIterator = db.iterator();
+        SeekingIterator<String, String> seekingIterator = db.iterator();
+        seekingIterator.seekToFirst();
         for (Entry<String, String> entry : entries) {
-            assertTrue(seekingIterator.hasNext());
-            assertEquals(seekingIterator.peek(), entry);
-            assertEquals(seekingIterator.next(), entry);
+            assertTrue(seekingIterator.valid());
+            assertEquals(entry(seekingIterator), entry);
+            seekingIterator.next();
         }
 
-        assertFalse(seekingIterator.hasNext());
+        assertFalse(seekingIterator.valid());
         seekingIterator.close();
     }
 
@@ -1448,9 +1541,10 @@ public class DbImplTest
         assertNull(db.get("A.missing"));
         db.db.invalidateAllCaches();
         assertEquals(db.getOpenHandles(), 3, "All files but log and manifest should be closed");
-        try (StringDbIterator iterator = db.iterator()) {
+        try (SeekingIterator<String, String> iterator = db.iterator()) {
             iterator.seek("B");
-            assertNotNull(iterator.next());
+            assertNotNull(iterator.key());
+            assertNotNull(iterator.value());
             assertTrue(db.getOpenHandles() > 3);
         }
         db.db.invalidateAllCaches();
@@ -1478,7 +1572,7 @@ public class DbImplTest
         testDb(db, asList(entries));
     }
 
-    private void testDb(DbStringWrapper db, List<Entry<String, String>> entries)
+    private void testDb(DbStringWrapper db, List<Entry<String, String>> entries) throws IOException
     {
         for (Entry<String, String> entry : entries) {
             db.put(entry.getKey(), entry.getValue());
@@ -1489,7 +1583,8 @@ public class DbImplTest
             assertEquals(actual, entry.getValue(), "Key: " + entry.getKey());
         }
 
-        StringDbIterator seekingIterator = db.iterator();
+        SeekingIterator<String, String> seekingIterator = db.iterator();
+        seekingIterator.seekToFirst();
         assertSequence(seekingIterator, entries);
 
         seekingIterator.seekToFirst();
@@ -1540,19 +1635,10 @@ public class DbImplTest
 
     private void assertNoNextElement(SeekingIterator<String, String> iterator)
     {
-        assertFalse(iterator.hasNext());
-        try {
-            iterator.next();
-            fail("Expected NoSuchElementException");
-        }
-        catch (NoSuchElementException expected) {
-        }
-        try {
-            iterator.peek();
-            fail("Expected NoSuchElementException");
-        }
-        catch (NoSuchElementException expected) {
-        }
+        assertFalse(iterator.valid());
+        assertFalse(iterator.next());
+        assertThrows(NoSuchElementException.class, iterator::key);
+        assertThrows(NoSuchElementException.class, iterator::value);
     }
 
     static byte[] toByteArray(String value)
@@ -1725,14 +1811,14 @@ public class DbImplTest
             db.delete(toByteArray(key));
         }
 
-        public StringDbIterator iterator()
+        public SeekingIterator<String, String> iterator()
         {
-            return new StringDbIterator(db.iterator());
+            return SeekingDBIteratorAdapter.toSeekingIterator(db.iterator(), k -> k.getBytes(UTF_8), k -> new String(k, UTF_8), v -> new String(v, UTF_8));
         }
 
-        public StringDbIterator iterator(ReadOptions readOption)
+        public SeekingIterator<String, String> iterator(ReadOptions readOption)
         {
-            return new StringDbIterator(db.iterator(readOption));
+            return SeekingDBIteratorAdapter.toSeekingIterator(db.iterator(readOption), k -> k.getBytes(UTF_8), k -> new String(k, UTF_8), v -> new String(v, UTF_8));
         }
 
         public Snapshot getSnapshot()
@@ -1823,9 +1909,9 @@ public class DbImplTest
         private List<String> allEntriesFor(String userKey) throws IOException
         {
             ImmutableList.Builder<String> result = ImmutableList.builder();
-            try (DbIterator iterator = db.internalIterator(new ReadOptions())) {
-                while (iterator.hasNext()) {
-                    Entry<InternalKey, Slice> entry = iterator.next();
+            try (InternalIterator iterator = db.internalIterator(new ReadOptions())) {
+                for (boolean valid = iterator.seekToFirst(); valid; valid = iterator.next()) {
+                    Entry<InternalKey, Slice> entry = entry(iterator);
                     String entryKey = entry.getKey().getUserKey().toString(UTF_8);
                     if (entryKey.equals(userKey)) {
                         if (entry.getKey().getValueType() == ValueType.VALUE) {
@@ -1840,64 +1926,6 @@ public class DbImplTest
             return result.build();
         }
 
-    }
-
-    private static class StringDbIterator
-            implements SeekingIterator<String, String>, Closeable
-    {
-        private final DBIterator iterator;
-
-        private StringDbIterator(DBIterator iterator)
-        {
-            this.iterator = iterator;
-        }
-
-        @Override
-        public boolean hasNext()
-        {
-            return iterator.hasNext();
-        }
-
-        @Override
-        public void seekToFirst()
-        {
-            iterator.seekToFirst();
-        }
-
-        @Override
-        public void seek(String targetKey)
-        {
-            iterator.seek(targetKey.getBytes(UTF_8));
-        }
-
-        @Override
-        public void close()
-        {
-            iterator.close();
-        }
-
-        @Override
-        public Entry<String, String> peek()
-        {
-            return adapt(iterator.peekNext());
-        }
-
-        @Override
-        public Entry<String, String> next()
-        {
-            return adapt(iterator.next());
-        }
-
-        @Override
-        public void remove()
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        private Entry<String, String> adapt(Entry<byte[], byte[]> next)
-        {
-            return immutableEntry(new String(next.getKey(), UTF_8), new String(next.getValue(), UTF_8));
-        }
     }
 
     private static class SpecialEnv implements Env
