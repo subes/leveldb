@@ -20,14 +20,14 @@ package org.iq80.leveldb.table;
 import com.google.common.base.Throwables;
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.ReadOptions;
-import org.iq80.leveldb.impl.SeekingIterable;
+import org.iq80.leveldb.iterator.SeekingIterators;
+import org.iq80.leveldb.iterator.SliceIterator;
 import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.PureJavaCrc32C;
 import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
 import org.iq80.leveldb.util.Snappy;
-import org.iq80.leveldb.util.TableIterator;
 import org.iq80.leveldb.util.VariableLengthQuantity;
 
 import java.io.Closeable;
@@ -46,7 +46,7 @@ import static java.util.Objects.requireNonNull;
 import static org.iq80.leveldb.CompressionType.SNAPPY;
 
 public final class Table
-        implements SeekingIterable<Slice, Slice>, Closeable
+        implements Closeable
 {
     private static final Charset CHARSET = StandardCharsets.UTF_8;
     private static final AtomicLong ID_GENERATOR = new AtomicLong();
@@ -91,9 +91,8 @@ public final class Table
         final Block meta = new Block(readRawBlock(metaindexBlockHandle, verifyChecksum), new BytewiseComparator());
         try (BlockIterator iterator = meta.iterator()) {
             final Slice targetKey = new Slice(("filter." + filterPolicy.name()).getBytes(CHARSET));
-            iterator.seek(targetKey);
-            if (iterator.hasNext() && iterator.peek().getKey().equals(targetKey)) {
-                return readFilter(filterPolicy, iterator.next().getValue(), verifyChecksum);
+            if (iterator.seek(targetKey) && iterator.key().equals(targetKey)) {
+                return readFilter(filterPolicy, iterator.value(), verifyChecksum);
             }
             else {
                 return null;
@@ -108,11 +107,17 @@ public final class Table
         return new FilterBlockReader(filterPolicy, filterBlock);
     }
 
-    @Override
-    public TableIterator iterator(ReadOptions options)
+    public SliceIterator iterator(ReadOptions options)
     {
         assert refCount.get() > 0;
-        return new TableIterator(this, indexBlock.iterator(), options);
+        this.retain();
+        return SeekingIterators.twoLevelSliceIterator(indexBlock.iterator(), blockHandle -> openBlock(options, blockHandle), this::release);
+    }
+
+    private BlockIterator openBlock(ReadOptions options, Slice blockHandle)
+    {
+        Block dataBlock = openBlock(blockHandle, options);
+        return dataBlock.iterator();
     }
 
     public FilterBlockReader getFilter()
@@ -208,19 +213,15 @@ public final class Table
     {
         assert refCount.get() > 0;
         try (final BlockIterator iterator = indexBlock.iterator()) {
-            iterator.seek(key);
-            if (iterator.hasNext()) {
-                final BlockEntry peek = iterator.peek();
-                final Slice handleValue = peek.getValue();
+            if (iterator.seek(key)) {
+                final Slice handleValue = iterator.value();
                 if (filter != null && !filter.keyMayMatch(BlockHandle.readBlockHandle(handleValue.input()).getOffset(), key)) {
                     return null;
                 }
                 else {
                     try (BlockIterator iterator1 = openBlock(handleValue, options).iterator()) {
-                        iterator1.seek(key);
-                        if (iterator1.hasNext()) {
-                            final BlockEntry next = iterator1.next();
-                            return keyValueFunction.apply(next.getKey(), next.getValue());
+                        if (iterator1.seek(key)) {
+                            return keyValueFunction.apply(iterator1.key(), iterator1.value());
                         }
                     }
                 }
@@ -247,9 +248,8 @@ public final class Table
     {
         assert refCount.get() > 0;
         try (BlockIterator iterator = indexBlock.iterator()) {
-            iterator.seek(key);
-            if (iterator.hasNext()) {
-                BlockHandle blockHandle = BlockHandle.readBlockHandle(iterator.next().getValue().input());
+            if (iterator.seek(key)) {
+                BlockHandle blockHandle = BlockHandle.readBlockHandle(iterator.value().input());
                 return blockHandle.getOffset();
             }
         }

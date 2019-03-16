@@ -29,7 +29,8 @@ import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.table.UserComparator;
-import org.iq80.leveldb.util.MergingIterator;
+import org.iq80.leveldb.iterator.InternalIterator;
+import org.iq80.leveldb.iterator.MergingIterator;
 import org.iq80.leveldb.util.SafeListBuilder;
 import org.iq80.leveldb.util.SequentialFile;
 import org.iq80.leveldb.util.Slice;
@@ -59,7 +60,6 @@ import static org.iq80.leveldb.impl.DbConstants.NUM_LEVELS;
 import static org.iq80.leveldb.impl.LogMonitors.throwExceptionMonitor;
 
 public class VersionSet
-        implements SeekingIterable<InternalKey, Slice>
 {
     private static final int L0_COMPACTION_TRIGGER = 4;
 
@@ -192,7 +192,6 @@ public class VersionSet
         return prevLogNumber;
     }
 
-    @Override
     public MergingIterator iterator(ReadOptions options) throws IOException
     {
         return current.iterator(options);
@@ -207,12 +206,12 @@ public class VersionSet
         // Level-0 files have to be merged together.  For other levels,
         // we will make a concatenating iterator per level.
         // TODO(opt): use concatenating iterator for level-0 if there is no overlap
-        try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> list = SafeListBuilder.builder()) {
+        try (SafeListBuilder<InternalIterator> list = SafeListBuilder.builder()) {
             for (int which = 0; which < 2; which++) {
                 List<FileMetaData> files = c.input(which);
                 if (!files.isEmpty()) {
                     if (c.getLevel() + which == 0) {
-                        try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder()) {
+                        try (SafeListBuilder<InternalIterator> builder = SafeListBuilder.builder()) {
                             for (FileMetaData file : files) {
                                 builder.add(tableCache.newIterator(file, rOptions));
                             }

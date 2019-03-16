@@ -36,14 +36,17 @@ import org.iq80.leveldb.WriteOptions;
 import org.iq80.leveldb.impl.Filename.FileInfo;
 import org.iq80.leveldb.impl.Filename.FileType;
 import org.iq80.leveldb.impl.WriteBatchImpl.Handler;
+import org.iq80.leveldb.iterator.DBIteratorAdapter;
+import org.iq80.leveldb.iterator.DbIterator;
+import org.iq80.leveldb.iterator.InternalIterator;
+import org.iq80.leveldb.iterator.MergingIterator;
+import org.iq80.leveldb.iterator.SnapshotSeekingIterator;
 import org.iq80.leveldb.table.BytewiseComparator;
 import org.iq80.leveldb.table.CustomUserComparator;
 import org.iq80.leveldb.table.FilterPolicy;
 import org.iq80.leveldb.table.TableBuilder;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.Closeables;
-import org.iq80.leveldb.util.DbIterator;
-import org.iq80.leveldb.util.MergingIterator;
 import org.iq80.leveldb.util.SafeListBuilder;
 import org.iq80.leveldb.util.SequentialFile;
 import org.iq80.leveldb.util.Slice;
@@ -62,7 +65,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map.Entry;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -1028,32 +1030,32 @@ public class DbImpl
     }
 
     @Override
-    public SeekingIteratorAdapter iterator()
+    public DBIteratorAdapter iterator()
     {
         return iterator(new ReadOptions());
     }
 
     @Override
-    public SeekingIteratorAdapter iterator(ReadOptions options)
+    public DBIteratorAdapter iterator(ReadOptions options)
     {
         mutex.lock();
         try {
-            DbIterator rawIterator = internalIterator(options);
+            InternalIterator rawIterator = internalIterator(options);
 
             // filter out any entries not visible in our snapshot
             long snapshot = getSnapshot(options);
-            SnapshotSeekingIterator snapshotIterator = new SnapshotSeekingIterator(rawIterator, snapshot, internalKeyComparator.getUserComparator(), new Random(), this);
-            return new SeekingIteratorAdapter(snapshotIterator);
+            SnapshotSeekingIterator snapshotIterator = new SnapshotSeekingIterator(rawIterator, snapshot, internalKeyComparator.getUserComparator(), new RecordBytesListener());
+            return new DBIteratorAdapter(snapshotIterator);
         }
         finally {
             mutex.unlock();
         }
     }
 
-    DbIterator internalIterator(ReadOptions options)
+    InternalIterator internalIterator(ReadOptions options)
     {
         mutex.lock();
-        try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder()) {
+        try (SafeListBuilder<InternalIterator> builder = SafeListBuilder.builder()) {
             // merge together the memTable, immutableMemTable, and tables in version set
             builder.add(memTable.iterator());
             if (immutableMemTable != null) {
@@ -1288,17 +1290,16 @@ public class DbImpl
             try (WritableFile writableFile = env.newWritableFile(file)) {
                 TableBuilder tableBuilder = new TableBuilder(options, writableFile, new InternalUserComparator(internalKeyComparator));
 
-                try (SeekingIterator<InternalKey, Slice> it = data.iterator()) {
-                    while (it.hasNext()) {
-                        Entry<InternalKey, Slice> entry = it.next();
+                try (InternalIterator it = data.iterator()) {
+                    for (boolean valid = it.seekToFirst(); valid; valid = it.next()) {
                         // update keys
-                        InternalKey key = entry.getKey();
+                        InternalKey key = it.key();
                         if (smallest == null) {
                             smallest = key;
                         }
                         largest = key;
 
-                        tableBuilder.add(key.encode(), entry.getValue());
+                        tableBuilder.add(key.encode(), it.value());
                     }
                 }
 
@@ -1350,7 +1351,7 @@ public class DbImpl
             boolean hasCurrentUserKey = false;
 
             long lastSequenceForKey = MAX_SEQUENCE_NUMBER;
-            while (iterator.hasNext() && !shuttingDown.get()) {
+            for (boolean valid = iterator.seekToFirst(); valid && !shuttingDown.get(); valid = iterator.next()) {
                 // always give priority to compacting the current mem table
                 if (immutableMemTable != null) {
                     long immStart = env.nowMicros();
@@ -1363,7 +1364,7 @@ public class DbImpl
                     }
                     immMicros += (env.nowMicros() - immStart);
                 }
-                InternalKey key = iterator.peek().getKey();
+                InternalKey key = iterator.key();
                 if (compactionState.compaction.shouldStopBefore(key) && compactionState.builder != null) {
                     finishCompactionOutputFile(compactionState);
                 }
@@ -1414,7 +1415,7 @@ public class DbImpl
                         compactionState.currentSmallest = key;
                     }
                     compactionState.currentLargest = key;
-                    compactionState.builder.add(key.encode(), iterator.peek().getValue());
+                    compactionState.builder.add(key.encode(), iterator.value());
 
                     // Close output file if it is big enough
                     if (compactionState.builder.getFileSize() >=
@@ -1422,7 +1423,6 @@ public class DbImpl
                         finishCompactionOutputFile(compactionState);
                     }
                 }
-                iterator.next();
             }
 
             if (shuttingDown.get()) {
@@ -1912,6 +1912,38 @@ public class DbImpl
         lockFile.delete();
         dbname.delete();  // Ignore error in case dir contains other files
         return res;
+    }
+
+    public class RecordBytesListener implements SnapshotSeekingIterator.IRecordBytesListener
+    {
+        private final Random r;
+        private int bytesCounter;
+
+        RecordBytesListener()
+        {
+            this.r = new Random();
+            this.bytesCounter = getRandomPeriod(r);
+        }
+
+        @Override
+        public void record(InternalKey internalKey, int bytes)
+        {
+            bytesCounter -= bytes;
+            while (bytesCounter < 0) {
+                bytesCounter += getRandomPeriod(r);
+                DbImpl.this.recordReadSample(internalKey);
+            }
+        }
+
+        /**
+         * Pick next gap with average value of {@link DbConstants#READ_BYTES_PERIOD}.
+         *
+         * @param r
+         */
+        private int getRandomPeriod(Random r)
+        {
+            return r.nextInt(2 * DbConstants.READ_BYTES_PERIOD);
+        }
     }
 
     private class WriteBatchInternal

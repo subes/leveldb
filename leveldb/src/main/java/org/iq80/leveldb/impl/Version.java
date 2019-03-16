@@ -22,7 +22,8 @@ import com.google.common.collect.ImmutableList.Builder;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
 import org.iq80.leveldb.ReadOptions;
-import org.iq80.leveldb.util.MergingIterator;
+import org.iq80.leveldb.iterator.InternalIterator;
+import org.iq80.leveldb.iterator.MergingIterator;
 import org.iq80.leveldb.util.SafeListBuilder;
 import org.iq80.leveldb.util.Slice;
 
@@ -41,7 +42,6 @@ import static org.iq80.leveldb.impl.SequenceNumber.MAX_SEQUENCE_NUMBER;
 
 // todo this class should be immutable
 public class Version
-        implements SeekingIterable<InternalKey, Slice>
 {
     private final AtomicInteger retained = new AtomicInteger(1);
     private final VersionSet versionSet;
@@ -123,15 +123,14 @@ public class Version
         this.compactionScore = compactionScore;
     }
 
-    @Override
     public MergingIterator iterator(ReadOptions options) throws IOException
     {
         return new MergingIterator(getLevelIterators(options), getInternalKeyComparator());
     }
 
-    List<SeekingIterator<InternalKey, Slice>> getLevelIterators(ReadOptions options) throws IOException
+    List<InternalIterator> getLevelIterators(ReadOptions options) throws IOException
     {
-        try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder();) {
+        try (SafeListBuilder<InternalIterator> builder = SafeListBuilder.builder()) {
             for (Level level : levels) {
                 if (!level.getFiles().isEmpty()) {
                     builder.add(level.iterator(options));

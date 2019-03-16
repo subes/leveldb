@@ -15,23 +15,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.impl;
+package org.iq80.leveldb.iterator;
 
-import com.google.common.collect.PeekingIterator;
+import org.iq80.leveldb.util.Slice;
 
-import java.io.Closeable;
-import java.util.Map.Entry;
-
-public interface SeekingIterator<K, V>
-        extends PeekingIterator<Entry<K, V>>, Closeable
+public interface SliceIterator extends SeekingIterator<Slice, Slice>
 {
-    /**
-     * Repositions the iterator so the beginning of this block.
-     */
-    void seekToFirst();
-
-    /**
-     * Repositions the iterator so the key of the next element returned greater than or equal to the specified targetKey.
-     */
-    void seek(K targetKey);
 }

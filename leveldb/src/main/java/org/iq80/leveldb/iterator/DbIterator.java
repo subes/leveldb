@@ -15,16 +15,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.iterator;
 
 import org.iq80.leveldb.impl.InternalKey;
-import org.iq80.leveldb.impl.SeekingIterator;
+import org.iq80.leveldb.util.Slice;
 
-import java.io.Closeable;
 import java.io.IOException;
-import java.util.Map.Entry;
 
-public final class DbIterator implements SeekingIterator<InternalKey, Slice>, Closeable
+public final class DbIterator implements InternalIterator
 {
     /*
      * NOTE: This code has been specifically tuned for performance of the DB
@@ -63,38 +61,50 @@ public final class DbIterator implements SeekingIterator<InternalKey, Slice>, Cl
     }
 
     @Override
-    public void seekToFirst()
+    public boolean valid()
     {
-        mergingIterator.seekToFirst();
+        return mergingIterator.valid();
     }
 
     @Override
-    public void seek(InternalKey targetKey)
+    public boolean seekToFirst()
     {
-        mergingIterator.seek(targetKey);
+        return mergingIterator.seekToFirst();
     }
 
     @Override
-    public Entry<InternalKey, Slice> peek()
+    public boolean seekToLast()
     {
-        return mergingIterator.peek();
+        return mergingIterator.seekToLast();
     }
 
     @Override
-    public boolean hasNext()
+    public boolean seek(InternalKey targetKey)
     {
-        return mergingIterator.hasNext();
+        return mergingIterator.seek(targetKey);
     }
 
     @Override
-    public Entry<InternalKey, Slice> next()
+    public boolean next()
     {
         return mergingIterator.next();
     }
 
     @Override
-    public void remove()
+    public boolean prev()
     {
-        mergingIterator.remove();
+        return mergingIterator.prev();
+    }
+
+    @Override
+    public InternalKey key()
+    {
+        return mergingIterator.key();
+    }
+
+    @Override
+    public Slice value()
+    {
+        return mergingIterator.value();
     }
 }

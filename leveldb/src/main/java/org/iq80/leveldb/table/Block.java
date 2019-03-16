@@ -107,6 +107,10 @@ public class Block
 
     public BlockIterator iterator()
     {
+        if (restartPositions.length() == 0) {
+            //initial java db implementation did not save restart position for empty blocks
+            return new BlockIterator(data, Slices.allocate(4), comparator);
+        }
         return new BlockIterator(data, restartPositions, comparator);
     }
 }

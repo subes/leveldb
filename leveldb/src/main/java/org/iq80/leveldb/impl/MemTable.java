@@ -17,9 +17,7 @@
  */
 package org.iq80.leveldb.impl;
 
-import com.google.common.collect.Iterators;
-import com.google.common.collect.PeekingIterator;
-import org.iq80.leveldb.util.InternalIterator;
+import org.iq80.leveldb.iterator.MemTableIterator;
 import org.iq80.leveldb.util.Slice;
 
 import java.util.Map.Entry;
@@ -85,61 +83,6 @@ public class MemTable
 
     public MemTableIterator iterator()
     {
-        return new MemTableIterator();
-    }
-
-    public class MemTableIterator
-            implements InternalIterator
-    {
-        private PeekingIterator<Entry<InternalKey, Slice>> iterator;
-
-        public MemTableIterator()
-        {
-            iterator = Iterators.peekingIterator(table.entrySet().iterator());
-        }
-
-        @Override
-        public boolean hasNext()
-        {
-            return iterator.hasNext();
-        }
-
-        @Override
-        public void seekToFirst()
-        {
-            iterator = Iterators.peekingIterator(table.entrySet().iterator());
-        }
-
-        @Override
-        public void seek(InternalKey targetKey)
-        {
-            iterator = Iterators.peekingIterator(table.tailMap(targetKey).entrySet().iterator());
-        }
-
-        @Override
-        public InternalEntry peek()
-        {
-            Entry<InternalKey, Slice> entry = iterator.peek();
-            return new InternalEntry(entry.getKey(), entry.getValue());
-        }
-
-        @Override
-        public InternalEntry next()
-        {
-            Entry<InternalKey, Slice> entry = iterator.next();
-            return new InternalEntry(entry.getKey(), entry.getValue());
-        }
-
-        @Override
-        public void remove()
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void close()
-        {
-            iterator = null;
-        }
+        return new MemTableIterator(table);
     }
 }

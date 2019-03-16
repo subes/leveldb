@@ -18,10 +18,13 @@
 package org.iq80.leveldb.impl;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.ReadOptions;
+import org.iq80.leveldb.iterator.SeekingIterator;
+import org.iq80.leveldb.iterator.SeekingIterators;
 import org.iq80.leveldb.table.UserComparator;
-import org.iq80.leveldb.util.LevelIterator;
-import org.iq80.leveldb.util.MergingIterator;
+import org.iq80.leveldb.iterator.InternalIterator;
+import org.iq80.leveldb.iterator.MergingIterator;
 import org.iq80.leveldb.util.SafeListBuilder;
 import org.iq80.leveldb.util.Slice;
 
@@ -39,7 +42,6 @@ import static org.iq80.leveldb.impl.ValueType.VALUE;
 
 // todo this class should be immutable
 public class Level
-        implements SeekingIterable<InternalKey, Slice>
 {
     public static final Comparator<FileMetaData> NEWEST_FIRST = (fileMetaData, fileMetaData1) -> (int) (fileMetaData1.getNumber() - fileMetaData.getNumber());
     private final int levelNumber;
@@ -70,11 +72,10 @@ public class Level
         return files;
     }
 
-    @Override
-    public SeekingIterator<InternalKey, Slice> iterator(ReadOptions options) throws IOException
+    public InternalIterator iterator(ReadOptions options) throws IOException
     {
         if (levelNumber == 0) {
-            try (SafeListBuilder<SeekingIterator<InternalKey, Slice>> builder = SafeListBuilder.builder()) {
+            try (SafeListBuilder<InternalIterator> builder = SafeListBuilder.builder()) {
                 for (FileMetaData file : files) {
                     builder.add(tableCache.newIterator(file, options));
                 }
@@ -86,9 +87,18 @@ public class Level
         }
     }
 
-    public static LevelIterator createLevelConcatIterator(TableCache tableCache, List<FileMetaData> files, InternalKeyComparator internalKeyComparator, ReadOptions options)
+    public static InternalIterator createLevelConcatIterator(TableCache tableCache, List<FileMetaData> files, InternalKeyComparator internalKeyComparator, ReadOptions options)
     {
-        return new LevelIterator(tableCache, files, internalKeyComparator, options);
+        SeekingIterator<InternalKey, FileMetaData> iterator = SeekingIterators.fromSortedList(files, FileMetaData::getLargest, f -> f, internalKeyComparator);
+        return SeekingIterators.twoLevelInternalIterator(iterator, fileMetaData -> {
+            try {
+                return tableCache.newIterator(fileMetaData, options);
+            }
+            catch (IOException e) {
+                throw new DBException(e);
+            }
+        }, () -> {
+        });
     }
 
     public LookupResult get(ReadOptions options, LookupKey key, ReadStats readStats)
