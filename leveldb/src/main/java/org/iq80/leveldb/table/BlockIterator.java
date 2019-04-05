@@ -209,14 +209,17 @@ public final class BlockIterator extends ASeekingIterator<Slice, Slice>
         int valueLength = VariableLengthQuantity.readVariableLengthInt(data);
 
         // read key
-        Slice key = Slices.allocate(sharedKeyLength + nonSharedKeyLength);
-        SliceOutput sliceOutput = key.output();
+        Slice key;
         if (sharedKeyLength > 0) {
+            key = Slices.allocate(sharedKeyLength + nonSharedKeyLength);
+            SliceOutput sliceOutput = key.output();
             checkState(this.key != null, "Entry has a shared key but no previous entry was provided");
             sliceOutput.writeBytes(this.key, 0, sharedKeyLength);
+            sliceOutput.writeBytes(data, nonSharedKeyLength);
         }
-        sliceOutput.writeBytes(data, nonSharedKeyLength);
-
+        else {
+            key = data.readSlice(nonSharedKeyLength);
+        }
         // read value
         Slice value = data.readSlice(valueLength);
 
