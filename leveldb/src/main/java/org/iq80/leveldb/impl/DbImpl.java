@@ -20,7 +20,6 @@ package org.iq80.leveldb.impl;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
-import com.google.common.collect.FluentIterable;
 import com.google.common.io.Closer;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.iq80.leveldb.CompressionType;
@@ -61,7 +60,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -77,6 +75,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
@@ -219,7 +218,7 @@ public class DbImpl
             // produced by an older version of leveldb.
             long minLogNumber = versions.getLogNumber();
             long previousLogNumber = versions.getPrevLogNumber();
-            final Set<Long> expected = FluentIterable.from(versions.getLiveFiles()).transform(FileMetaData::getNumber).copyInto(new HashSet<>());
+            final Set<Long> expected = versions.getLiveFiles().stream().map(FileMetaData::getNumber).collect(Collectors.toSet());
             List<File> filenames = Filename.listFiles(databaseDir);
 
             List<Long> logs = new ArrayList<>();

@@ -17,7 +17,6 @@
  */
 package org.iq80.leveldb.table;
 
-import com.google.common.primitives.Ints;
 import org.iq80.leveldb.util.DynamicSliceOutput;
 import org.iq80.leveldb.util.IntVector;
 import org.iq80.leveldb.util.Slice;
@@ -142,7 +141,7 @@ public class BlockBuilder
         int sharedKeyBytes = 0;
 
         if (leftKey != null && rightKey != null) {
-            int minSharedKeyBytes = Ints.min(leftKey.length(), rightKey.length());
+            int minSharedKeyBytes = Math.min(leftKey.length(), rightKey.length());
             while (sharedKeyBytes < minSharedKeyBytes && leftKey.getByte(sharedKeyBytes) == rightKey.getByte(sharedKeyBytes)) {
                 sharedKeyBytes++;
             }
