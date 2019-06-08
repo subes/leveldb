@@ -18,7 +18,6 @@
 package org.iq80.leveldb.impl;
 
 import org.iq80.leveldb.Logger;
-import org.iq80.leveldb.util.FileLogger;
 import org.iq80.leveldb.util.MMRandomInputFile;
 import org.iq80.leveldb.util.MMWritableFile;
 import org.iq80.leveldb.util.RandomInputFile;
@@ -105,7 +104,7 @@ public class EnvImpl implements Env
     @Override
     public Logger newLogger(File loggerFile) throws IOException
     {
-        return FileLogger.createFileLogger(loggerFile);
+        return new NoOpLogger(); //different that native but avoid for ever growing log file
     }
 
     private static class DelegateRandomInputFile implements RandomInputFile

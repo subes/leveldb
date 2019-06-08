@@ -17,6 +17,7 @@
  */
 package org.iq80.leveldb.util;
 
+import org.iq80.leveldb.Logger;
 import org.testng.annotations.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -34,7 +35,7 @@ public class FileLoggerTest
     {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         LocalDateTime start = LocalDateTime.now();
-        FileLogger fileLogger = FileLogger.createFileLogger(outputStream, new LocalDateTimeSupplier(start));
+        Logger fileLogger = FileLogger.createLogger(outputStream, new LocalDateTimeSupplier(start));
         fileLogger.log("a bc ");
         fileLogger.log("without place", "arg1", "arg2");
         fileLogger.log("- %s -", "abc");
