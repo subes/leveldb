@@ -20,6 +20,8 @@ package org.iq80.leveldb.table;
 import org.iq80.leveldb.DBComparator;
 import org.iq80.leveldb.util.Slice;
 
+import static java.util.Objects.requireNonNull;
+
 public class CustomUserComparator
         implements UserComparator
 {
@@ -27,6 +29,7 @@ public class CustomUserComparator
 
     public CustomUserComparator(DBComparator comparator)
     {
+        requireNonNull(comparator.name(), "User Comparator name can't be null");
         this.comparator = comparator;
     }
 
@@ -39,13 +42,17 @@ public class CustomUserComparator
     @Override
     public Slice findShortestSeparator(Slice start, Slice limit)
     {
-        return new Slice(comparator.findShortestSeparator(start.getBytes(), limit.getBytes()));
+        byte[] shortestSeparator = comparator.findShortestSeparator(start.getBytes(), limit.getBytes());
+        requireNonNull(shortestSeparator, "User comparator returned null from findShortestSeparator()");
+        return new Slice(shortestSeparator);
     }
 
     @Override
     public Slice findShortSuccessor(Slice key)
     {
-        return new Slice(comparator.findShortSuccessor(key.getBytes()));
+        byte[] shortSuccessor = comparator.findShortSuccessor(key.getBytes());
+        requireNonNull(comparator, "User comparator returned null from findShortSuccessor()");
+        return new Slice(shortSuccessor);
     }
 
     @Override
