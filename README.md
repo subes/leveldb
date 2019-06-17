@@ -17,8 +17,8 @@ to enable merges and compare compatibility with [fusesource/leveldbjni](https://
 
 ### TODO port (from [Google LevelDb 1.20](https://github.com/google/leveldb/releases/tag/v1.20))
 
-* Reverse iterator
-* Repairer
+* Repairer tool
+* Corruption unit test
 
 ## API Usage:
 
