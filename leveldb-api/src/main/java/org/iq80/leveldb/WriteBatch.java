@@ -25,7 +25,19 @@ import java.io.Closeable;
 public interface WriteBatch
         extends Closeable
 {
+    /**
+     * The size of the database changes caused by this batch.
+     *
+     * This number is tied to implementation details, and may change across
+     * releases. It is intended for LevelDB usage metrics.
+     */
+    int getApproximateSize();
+
+    int size();
+
     WriteBatch put(byte[] key, byte[] value);
 
     WriteBatch delete(byte[] key);
+
+
 }

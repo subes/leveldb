@@ -38,11 +38,13 @@ public class WriteBatchImpl
     //TODO fix this count that is wrong!!!
     private int approximateSize;
 
+    @Override
     public int getApproximateSize()
     {
         return approximateSize;
     }
 
+    @Override
     public int size()
     {
         return batch.size();
