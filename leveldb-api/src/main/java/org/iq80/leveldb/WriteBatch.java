@@ -27,17 +27,24 @@ public interface WriteBatch
 {
     /**
      * The size of the database changes caused by this batch.
-     *
+     * <p>
      * This number is tied to implementation details, and may change across
      * releases. It is intended for LevelDB usage metrics.
      */
     int getApproximateSize();
 
+    /**
+     * Number of entries in the batch
+     */
     int size();
 
+    /**
+     * Store the mapping key and value in the database.
+     */
     WriteBatch put(byte[] key, byte[] value);
 
+    /**
+     * If the database contains a mapping for "key", erase it.  Else do nothing.
+     */
     WriteBatch delete(byte[] key);
-
-
 }

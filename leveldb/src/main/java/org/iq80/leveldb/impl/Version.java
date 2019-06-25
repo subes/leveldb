@@ -144,7 +144,7 @@ public class Version
     {
         // We can search level-by-level since entries never hop across
         // levels.  Therefore we are guaranteed that if we find data
-        // in an smaller level, later levels are irrelevant.
+        // in a smaller level, later levels are irrelevant.
         LookupResult lookupResult = null;
         for (Level level : levels) {
             lookupResult = level.get(options, key, readStats);
