@@ -28,9 +28,9 @@ import com.google.common.io.Files;
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.ReadOptions;
-import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.iterator.InternalIterator;
 import org.iq80.leveldb.iterator.MergingIterator;
+import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.SafeListBuilder;
 import org.iq80.leveldb.util.SequentialFile;
 import org.iq80.leveldb.util.Slice;
@@ -649,8 +649,87 @@ public class VersionSet
         return setupOtherInputs(level, levelInputs);
     }
 
+    /**
+     * find the largest key in a vector of files.
+     *
+     * @return {@link InternalKey} if {@code files} is no empty, {@code null} otherwise
+     */
+    private static InternalKey findLargestKey(InternalKeyComparator internalKeyComparator, List<FileMetaData> files)
+    {
+        if (files.isEmpty()) {
+            return null;
+        }
+        InternalKey largestKey = files.get(0).getLargest();
+        for (FileMetaData file : files) {
+            if (internalKeyComparator.compare(file.getLargest(), largestKey) > 0) {
+                largestKey = file.getLargest();
+            }
+        }
+        return largestKey;
+    }
+
+    /**
+     * find minimum file b2=(l2, u2) in level file for which l2 > u1 and userKey(l2) = userKey(u1)
+     */
+    private static FileMetaData findSmallestBoundaryFile(InternalKeyComparator internalKeyComparator, List<FileMetaData> levelFiles,
+                                                         InternalKey largestKey)
+    {
+        UserComparator userComparator = internalKeyComparator.getUserComparator();
+        FileMetaData smallestBoundaryFile = null;
+        for (FileMetaData f : levelFiles) {
+            if (internalKeyComparator.compare(f.getSmallest(), largestKey) > 0 &&
+                    userComparator.compare(f.getSmallest().getUserKey(), largestKey.getUserKey()) == 0) {
+                if (smallestBoundaryFile == null ||
+                        internalKeyComparator.compare(f.getSmallest(), smallestBoundaryFile.getSmallest()) < 0) {
+                    smallestBoundaryFile = f;
+                }
+            }
+        }
+        return smallestBoundaryFile;
+    }
+
+    /**
+     * Extracts the largest file b1 from {@code compactionFiles} and then searches for a
+     * b2 in {@code levelFiles} for which userKey(u1) = userKey(l2). If it finds such a
+     * file b2 (known as a boundary file), adds it to {@code compactionFiles} and then
+     * searches again using this new upper bound.
+     * <p>
+     * If there are two blocks, b1=(l1, u1) and b2=(l2, u2) and
+     * userKey(u1) = userKey(l2), and if we compact b1 but not b2 then a
+     * subsequent get operation will yield an incorrect result because it will
+     * return the record from b2 in level i rather than from b1 because it searches
+     * level by level for records matching the supplied user key.
+     *
+     * @param internalKeyComparator internal key comparator
+     * @param levelFiles            List of files to search for boundary files.
+     * @param compactionFiles       in/out List of files to extend by adding boundary files.
+     */
+    static void addBoundaryInputs(InternalKeyComparator internalKeyComparator, List<FileMetaData> levelFiles,
+                                  List<FileMetaData> compactionFiles)
+    {
+        InternalKey largestKey = findLargestKey(internalKeyComparator, compactionFiles);
+        if (largestKey == null) {
+            return;
+        }
+
+        while (true) {
+            FileMetaData smallestBoundaryFile =
+                    findSmallestBoundaryFile(internalKeyComparator, levelFiles, largestKey);
+
+            // if a boundary file was found advance largestKey, otherwise we're done
+            if (smallestBoundaryFile != null) {
+                compactionFiles.add(smallestBoundaryFile);
+                largestKey = smallestBoundaryFile.getLargest();
+            }
+            else {
+                break;
+            }
+        }
+    }
+
     private Compaction setupOtherInputs(int level, List<FileMetaData> levelInputs)
     {
+        addBoundaryInputs(internalKeyComparator, current.getFiles(level), levelInputs);
         Entry<InternalKey, InternalKey> range = getRange(levelInputs);
         InternalKey smallest = range.getKey();
         InternalKey largest = range.getValue();
@@ -666,6 +745,7 @@ public class VersionSet
         // changing the number of "level+1" files we pick up.
         if (!levelUpInputs.isEmpty()) {
             List<FileMetaData> expanded0 = getOverlappingInputs(level, allStart, allLimit);
+            addBoundaryInputs(internalKeyComparator, current.getFiles(level), expanded0);
             long levelInputSize = totalFileSize(levelInputs);
             long levelUpInputSize = totalFileSize(levelUpInputs);
             long expanded0Size = totalFileSize(expanded0);
@@ -815,7 +895,8 @@ public class VersionSet
      * of edits to a particular state without creating intermediate
      * Versions that contain full copies of the intermediate state.
      */
-    private static class Builder implements AutoCloseable
+    private static class Builder
+            implements AutoCloseable
     {
         private final VersionSet versionSet;
         private final Version baseVersion;
