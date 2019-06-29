@@ -21,6 +21,8 @@ import java.io.Closeable;
 import java.io.IOException;
 
 /**
+ * An interface for writing log messages.
+ *
  * @author <a href="http://hiramchirino.com">Hiram Chirino</a>
  */
 public interface Logger extends Closeable

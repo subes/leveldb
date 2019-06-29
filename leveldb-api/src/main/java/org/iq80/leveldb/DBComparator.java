@@ -25,17 +25,33 @@ import java.util.Comparator;
 public interface DBComparator
         extends Comparator<byte[]>
 {
+    /**
+     * The name of the comparator.  Used to check for comparator
+     * mismatches (i.e., a DB created with one comparator is
+     * accessed using a different comparator.
+     * <p>
+     * The client of this package should switch to a new name whenever
+     * the comparator implementation changes in a way that will cause
+     * the relative ordering of any two keys to change.
+     * <p
+     * Names starting with "leveldb." are reserved and should not be used
+     * by any clients of this package.
+     *
+     * @return comparator name
+     */
     String name();
 
     /**
-     * If {@code start < limit}, returns a short key in [start,limit).
+     * If {@code start < limit}, returns a short key in {@code [start,limit)}.
      * Simple comparator implementations should return start unchanged,
+     * i.e., an implementation of this method that does nothing is correct.
      */
     byte[] findShortestSeparator(byte[] start, byte[] limit);
 
     /**
      * returns a 'short key' where the 'short key' is greater than or equal to key.
      * Simple comparator implementations should return key unchanged,
+     * i.e., an implementation of this method that does nothing is correct.
      */
     byte[] findShortSuccessor(byte[] key);
 }

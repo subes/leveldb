@@ -19,6 +19,13 @@ package org.iq80.leveldb;
 
 import java.io.Closeable;
 
+/**
+ * Abstract handle to particular state of a DB.
+ * A Snapshot can therefore be safely accessed from multiple threads
+ * without any external synchronization.
+ *
+ * Can't be used after close
+ */
 public interface Snapshot
         extends Closeable
 {

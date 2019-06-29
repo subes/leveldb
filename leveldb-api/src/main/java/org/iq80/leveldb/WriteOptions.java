@@ -17,6 +17,9 @@
  */
 package org.iq80.leveldb;
 
+/**
+ * Options that control write operations
+ */
 public class WriteOptions
 {
     private boolean sync;
@@ -52,6 +55,9 @@ public class WriteOptions
         return this;
     }
 
+    /**
+     * If "snapshot" is true, take a snapshot at the end of this write operation
+     */
     public boolean snapshot()
     {
         return snapshot;

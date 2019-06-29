@@ -17,6 +17,9 @@
  */
 package org.iq80.leveldb;
 
+/**
+ * Options to control the behavior of a database
+ */
 public class Options
 {
     private boolean createIfMissing = true;
@@ -36,6 +39,9 @@ public class Options
     private XFilterPolicy filterPolicy;
     private boolean reuseLogs = false;
 
+    /**
+     * Clone, create a copy of the provided instance of {@link Options}
+     */
     public static Options fromOptions(Options options)
     {
         checkArgNotNull(options, "Options can't be null");
@@ -57,6 +63,14 @@ public class Options
         return options1;
     }
 
+    /**
+     * Create an Options object with default values for all fields.
+     */
+    public static Options newDefaultOptions()
+    {
+        return new Options();
+    }
+
     static void checkArgNotNull(Object value, String name)
     {
         if (value == null) {
@@ -64,6 +78,9 @@ public class Options
         }
     }
 
+    /**
+     * If true, the database will be created if it is missing.
+     */
     public boolean createIfMissing()
     {
         return createIfMissing;
@@ -80,6 +97,9 @@ public class Options
         return errorIfExists;
     }
 
+    /**
+     * If true, an error is raised if the database already exists.
+     */
     public Options errorIfExists(boolean errorIfExists)
     {
         this.errorIfExists = errorIfExists;
@@ -91,6 +111,18 @@ public class Options
         return writeBufferSize;
     }
 
+    /**
+     * Parameters that affect performance
+     * <p>
+     * Amount of data to build up in memory (backed by an unsorted log
+     * on disk) before converting to a sorted on-disk file.
+     * <p>
+     * Larger values increase performance, especially during bulk loads.
+     * Up to two write buffers may be held in memory at the same time,
+     * so you may wish to adjust this parameter to control memory usage.
+     * Also, a larger write buffer will result in a longer recovery time
+     * the next time the database is opened.
+     */
     public Options writeBufferSize(int writeBufferSize)
     {
         this.writeBufferSize = writeBufferSize;
@@ -102,6 +134,11 @@ public class Options
         return maxOpenFiles;
     }
 
+    /**
+     * Number of open files that can be used by the DB.  You may need to
+     * increase this if your database has a large working set (budget
+     * one open file per 2MB of working set).
+     */
     public Options maxOpenFiles(int maxOpenFiles)
     {
         this.maxOpenFiles = maxOpenFiles;
@@ -113,6 +150,11 @@ public class Options
         return blockRestartInterval;
     }
 
+    /**
+     * Number of keys between restart points for delta encoding of keys.
+     * This parameter can be changed dynamically.  Most clients should
+     * leave this parameter alone.
+     */
     public Options blockRestartInterval(int blockRestartInterval)
     {
         this.blockRestartInterval = blockRestartInterval;
@@ -149,6 +191,12 @@ public class Options
         return blockSize;
     }
 
+    /**
+     * Approximate size of user data packed per block.  Note that the
+     * block size specified here corresponds to uncompressed data.  The
+     * actual size of the unit read from disk may be smaller if
+     * compression is enabled.  This parameter can be changed dynamically.
+     */
     public Options blockSize(int blockSize)
     {
         this.blockSize = blockSize;
@@ -160,6 +208,25 @@ public class Options
         return compressionType;
     }
 
+    /**
+     * Compress blocks using the specified compression algorithm.  This
+     * parameter can be changed dynamically.
+     * <p>
+     * Default: {@link CompressionType#SNAPPY}, which gives lightweight but fast
+     * compression.
+     * <p>
+     * Typical speeds of {@link CompressionType#SNAPPY} on an Intel(R) Core(TM)2 2.4GHz:
+     * ~200-500MB/s compression
+     * ~400-800MB/s decompression
+     * Note that these speeds are significantly faster than most
+     * persistent storage speeds, and therefore it is typically never
+     * worth switching to {@link CompressionType#NONE}.  Even if the input data is
+     * incompressible, the {@link CompressionType#SNAPPY} implementation will
+     * efficiently detect that and will switch to uncompressed mode.
+     * <p>
+     * If Snappy compression is not available, {@link CompressionType#NONE}
+     * will be used.
+     */
     public Options compressionType(CompressionType compressionType)
     {
         checkArgNotNull(compressionType, "compressionType");
@@ -172,6 +239,11 @@ public class Options
         return cacheSize;
     }
 
+    /**
+     * If {@code cacheSize} is zero, no block cache will be used-
+     * If non-zero, use the specified cache size for blocks.
+     * By default leveldb will automatically create and use an 8MB internal cache.
+     */
     public Options cacheSize(long cacheSize)
     {
         this.cacheSize = cacheSize;
@@ -183,6 +255,16 @@ public class Options
         return comparator;
     }
 
+    /**
+     * Parameters that affect behavior
+     * <p>
+     * Comparator used to define the order of keys in the table.
+     * Default: a comparator that uses lexicographic byte-wise ordering
+     * <p>
+     * REQUIRES: The client must ensure that the comparator supplied
+     * here has the same name and orders keys *exactly* the same as the
+     * comparator provided to previous open calls on the same DB.
+     */
     public Options comparator(DBComparator comparator)
     {
         this.comparator = comparator;
@@ -194,6 +276,11 @@ public class Options
         return logger;
     }
 
+    /**
+     * Any internal progress/error information generated by the db will
+     * be written to {@code logger} if it is non-null, or to a file stored
+     * in the same directory as the DB contents if info_log is null.
+     */
     public Options logger(Logger logger)
     {
         this.logger = logger;
@@ -205,6 +292,13 @@ public class Options
         return paranoidChecks;
     }
 
+    /**
+     * If true, the implementation will do aggressive checking of the
+     * data it is processing and will stop early if it detects any
+     * errors.  This may have unforeseen ramifications: for example, a
+     * corruption of one DB entry may cause a large number of entries to
+     * become unreadable or for the entire DB to become unopenable.
+     */
     public Options paranoidChecks(boolean paranoidChecks)
     {
         this.paranoidChecks = paranoidChecks;
@@ -212,7 +306,8 @@ public class Options
     }
 
     /**
-     * Set table filter policy
+     * If non-null, use the specified filter policy to reduce disk reads.
+     * Many applications will benefit from passing an instance of BloomFilter
      *
      * @param filterPolicy new filter policy
      * @return self
