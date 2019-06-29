@@ -1374,6 +1374,38 @@ public class DbImplTest
         new DbImpl(options, databaseDir, EnvImpl.createEnv()); //reopen and should fail
     }
 
+    @Test
+    public void testDestroyEmptyDir() throws Exception
+    {
+        DbImpl.destroyDB(databaseDir);
+        assertFalse(databaseDir.exists());
+    }
+
+    @Test
+    public void testDestroyOpenDB() throws Exception
+    {
+        databaseDir.delete();
+        assertFalse(databaseDir.exists());
+        Options options = new Options();
+        options.createIfMissing(true);
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir);
+        assertTrue(databaseDir.exists());
+
+        try {
+            //must fail
+            DbImpl.destroyDB(databaseDir);
+            Assert.fail("Destroy DB should not complete successfully");
+        }
+        catch (Exception e) {
+            //expected
+        }
+        db.close();
+
+        // Should succeed destroying a closed db.
+        DbImpl.destroyDB(databaseDir);
+        assertFalse(databaseDir.exists());
+    }
+
     //Check that number of files does not grow when we are out of space
     @Test
     public void testNoSpace() throws Exception

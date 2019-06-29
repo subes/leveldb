@@ -1893,7 +1893,7 @@ public class DbImpl
     {
         // Ignore error in case directory does not exist
         File[] filenames = dbname.listFiles();
-        if (filenames == null || filenames.length == 0) {
+        if (filenames == null) {
             return true;
         }
 
