@@ -101,7 +101,7 @@ public class Level
         });
     }
 
-    public LookupResult get(ReadOptions options, LookupKey key, ReadStats readStats)
+    public LookupResult get(ReadOptions options, LookupKey key, ReadStats readStats, ReadStats lasReadFile)
     {
         if (files.isEmpty()) {
             return null;
@@ -112,18 +112,15 @@ public class Level
             return null;
         }
 
-        FileMetaData lastFileRead = null;
-        int lastFileReadLevel = -1;
-        readStats.clear();
         for (FileMetaData fileMetaData : fileMetaDataList) {
-            if (lastFileRead != null && readStats.getSeekFile() == null) {
+            if (lasReadFile.getSeekFile() != null && readStats.getSeekFile() == null) {
                 // We have had more than one seek for this read.  Charge the first file.
-                readStats.setSeekFile(lastFileRead);
-                readStats.setSeekFileLevel(lastFileReadLevel);
+                readStats.setSeekFile(lasReadFile.getSeekFile());
+                readStats.setSeekFileLevel(lasReadFile.getSeekFileLevel());
             }
 
-            lastFileRead = fileMetaData;
-            lastFileReadLevel = levelNumber;
+            lasReadFile.setSeekFile(fileMetaData);
+            lasReadFile.setSeekFileLevel(levelNumber);
 
             final LookupResult lookupResult = tableCache.get(options, key.getInternalKey().encode(), fileMetaData, new KeyMatchingLookup(key));
             if (lookupResult != null) {

@@ -146,8 +146,9 @@ public class Version
         // levels.  Therefore we are guaranteed that if we find data
         // in a smaller level, later levels are irrelevant.
         LookupResult lookupResult = null;
+        ReadStats lastStats = new ReadStats();
         for (Level level : levels) {
-            lookupResult = level.get(options, key, readStats);
+            lookupResult = level.get(options, key, readStats, lastStats);
             if (lookupResult != null) {
                 break;
             }

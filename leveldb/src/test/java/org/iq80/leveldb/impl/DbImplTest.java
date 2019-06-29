@@ -421,7 +421,45 @@ public class DbImplTest
         assertEquals(db.get("x"), "vx");
     }
 
-    //TODO implement GetEncountersEmptyLevel
+    @Test(dataProvider = "options")
+    public void testGetEncountersEmptyLevel(final Options options)
+            throws Exception
+    {
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir);
+        // Arrange for the following to happen:
+        //   * sstable A in level 0
+        //   * nothing in level 1
+        //   * sstable B in level 2
+        // Then do enough Get() calls to arrange for an automatic compaction
+        // of sstable A.  A bug would cause the compaction to be marked as
+        // occurring at level 1 (instead of the correct level 0).
+
+        // Step 1: First place sstables in levels 0 and 2
+        int compactionCount = 0;
+        while (db.numberOfFilesInLevel(0) == 0 || db.numberOfFilesInLevel(2) == 0) {
+            assertTrue(compactionCount <= 100, "could not fill levels 0 and 2");
+            compactionCount++;
+            db.put("a", "begin");
+            db.put("z", "end");
+            db.testCompactMemTable();
+        }
+
+        // Step 2: clear level 1 if necessary.
+        db.testCompactRange(1, null, null);
+        assertEquals(db.numberOfFilesInLevel(0), 1);
+        assertEquals(db.numberOfFilesInLevel(1), 0);
+        assertEquals(db.numberOfFilesInLevel(2), 1);
+
+        // Step 3: read a bunch of times
+        for (int i = 0; i < 1000; i++) {
+            assertNull(db.get("missing"));
+        }
+
+        // Step 4: Wait for compaction to finish
+        db.waitForBackgroundCompactationToFinish();
+
+        assertEquals(db.numberOfFilesInLevel(0), 0);
+    }
 
     @Test(dataProvider = "options")
     public void testEmptyIterator(final Options options)
@@ -1908,6 +1946,11 @@ public class DbImplTest
         public void testCompactRange(int level, String start, String limit)
         {
             db.testCompactRange(level, start == null ? null : Slices.copiedBuffer(start, UTF_8), limit == null ? null : Slices.copiedBuffer(limit, UTF_8));
+            db.waitForBackgroundCompactationToFinish();
+        }
+
+        public void waitForBackgroundCompactationToFinish()
+        {
             db.waitForBackgroundCompactationToFinish();
         }
 
