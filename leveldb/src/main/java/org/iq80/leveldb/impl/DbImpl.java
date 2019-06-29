@@ -1916,30 +1916,30 @@ public class DbImpl
     public class RecordBytesListener implements SnapshotSeekingIterator.IRecordBytesListener
     {
         private final Random r;
-        private int bytesCounter;
+        private int bytesReadUntilSampling;
 
         RecordBytesListener()
         {
             this.r = new Random();
-            this.bytesCounter = getRandomPeriod(r);
+            this.bytesReadUntilSampling = getRandomCompactionPeriod(r);
         }
 
         @Override
         public void record(InternalKey internalKey, int bytes)
         {
-            bytesCounter -= bytes;
-            while (bytesCounter < 0) {
-                bytesCounter += getRandomPeriod(r);
+            bytesReadUntilSampling -= bytes;
+            while (bytesReadUntilSampling < 0) {
+                bytesReadUntilSampling += getRandomCompactionPeriod(r);
                 DbImpl.this.recordReadSample(internalKey);
             }
         }
 
         /**
-         * Pick next gap with average value of {@link DbConstants#READ_BYTES_PERIOD}.
+         * Picks the number of bytes that can be read until a compaction is scheduled.
          *
          * @param r
          */
-        private int getRandomPeriod(Random r)
+        private int getRandomCompactionPeriod(Random r)
         {
             return r.nextInt(2 * DbConstants.READ_BYTES_PERIOD);
         }

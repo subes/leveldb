@@ -212,9 +212,6 @@ public class DbBenchmark
             else if (benchmark.equals("crc32c")) {
                 method = this::crc32c;
             }
-            else if (benchmark.equals("acquireload")) {
-                method = this::acquireLoad;
-            }
             else if (benchmark.equals("snappycomp")) {
                 if (Snappy.available()) {
                     method = this::snappyCompress;
@@ -637,11 +634,6 @@ public class DbBenchmark
         thread.stats.addMessage(label);
     }
 
-    private void acquireLoad(ThreadState thread)
-    {
-        //TODO implement acquireLoad
-    }
-
     private void snappyCompress(ThreadState thread)
     {
         byte[] raw = newGenerator().generate(new Options().blockSize());
@@ -851,7 +843,6 @@ public class DbBenchmark
         //      readrandom    -- read N times in random order
         //      readhot       -- read N times in random order from 1% section of DB
         //      crc32c        -- repeated crc32c of 4K of data
-        //      acquireload   -- load N*1000 times
         //   Meta operations:
         //      compact     -- Compact the entire DB
         //      stats       -- Print DB stats
@@ -875,7 +866,6 @@ public class DbBenchmark
                 "unsnap-array",
                 "unsnap-direct",
                 "stats"
-                // "acquireload"
         )) {
             @Override
             public Object parseValue(String value)
