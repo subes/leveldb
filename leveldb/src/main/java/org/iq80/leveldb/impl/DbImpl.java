@@ -164,9 +164,16 @@ public class DbImpl
         ThreadFactory compactionThreadFactory = new ThreadFactoryBuilder()
                 .setNameFormat("leveldb-compaction-%s")
                 .setUncaughtExceptionHandler((t, e) -> {
-                    // todo need a real UncaughtExceptionHandler
-                    System.out.printf("%s%n", t);
-                    e.printStackTrace();
+                    mutex.lock();
+                    try {
+                        if (backgroundException == null) {
+                            backgroundException = e;
+                        }
+                        options.logger().log("Unexpected exception occurred %s", e);
+                    }
+                    finally {
+                        mutex.unlock();
+                    }
                 })
                 .build();
         compactionExecutor = Executors.newSingleThreadExecutor(compactionThreadFactory);
