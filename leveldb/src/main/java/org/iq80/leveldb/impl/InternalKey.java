@@ -21,6 +21,8 @@ import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceOutput;
 import org.iq80.leveldb.util.Slices;
 
+import java.util.Objects;
+
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
@@ -97,7 +99,7 @@ public class InternalKey
         if (sequenceNumber != that.sequenceNumber) {
             return false;
         }
-        if (userKey != null ? !userKey.equals(that.userKey) : that.userKey != null) {
+        if (!Objects.equals(userKey, that.userKey)) {
             return false;
         }
         if (valueType != that.valueType) {
