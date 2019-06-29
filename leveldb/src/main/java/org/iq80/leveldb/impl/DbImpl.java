@@ -91,7 +91,6 @@ import static org.iq80.leveldb.util.SizeOf.SIZE_OF_LONG;
 import static org.iq80.leveldb.util.Slices.readLengthPrefixedBytes;
 import static org.iq80.leveldb.util.Slices.writeLengthPrefixedBytes;
 
-// todo make thread safe and concurrent
 @SuppressWarnings("AccessingNonPublicFieldOfAnotherObject")
 public class DbImpl
         implements DB
@@ -721,8 +720,14 @@ public class DbImpl
                     if (mem == null) {
                         mem = new MemTable(internalKeyComparator);
                     }
-                    //TODO ignore error if no paranoidChecks (but log it)
                     writeBatch.forEach(new InsertIntoHandler(mem, sequenceBegin));
+                }
+                catch (Exception e) {
+                    if (!options.paranoidChecks()) {
+                        options.logger().log("Ignoring error %s", e);
+                    }
+                    Throwables.propagateIfPossible(e, IOException.class);
+                    throw new IOException(e);
                 }
 
                 // update the maxSequence
@@ -1324,7 +1329,6 @@ public class DbImpl
             tableCache.newIterator(fileMetaData, new ReadOptions()).close();
 
             return fileMetaData;
-
         }
         catch (IOException e) {
             file.delete();
@@ -1920,7 +1924,8 @@ public class DbImpl
         return res;
     }
 
-    public class RecordBytesListener implements SnapshotSeekingIterator.IRecordBytesListener
+    public class RecordBytesListener
+            implements SnapshotSeekingIterator.IRecordBytesListener
     {
         private final Random r;
         private int bytesReadUntilSampling;
