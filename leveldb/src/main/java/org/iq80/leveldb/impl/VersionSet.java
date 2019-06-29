@@ -286,8 +286,8 @@ public class VersionSet
             // Initialize new descriptor log file if necessary by creating
             // a temporary file that contains a snapshot of the current version.
             if (descriptorLog == null) {
-                // No reason to unlock *mu here since we only hit this path in the
-                // first call to LogAndApply (when opening the database).
+                // No reason to unlock mutex here since we only hit this path in the
+                // first call to logAndApply (when opening the database).
                 edit.setNextFileNumber(nextFileNumber.get());
                 descriptorLog = Logs.createLogWriter(new File(databaseDir, Filename.descriptorFileName(mFileNumber)), mFileNumber, env);
                 writeSnapshot(descriptorLog);

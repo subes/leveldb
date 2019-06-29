@@ -197,6 +197,30 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
+    public void testEmptyKey(final Options options)
+            throws Exception
+    {
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir);
+        db.put("", "v1");
+        assertEquals(db.get(""), "v1");
+        db.put("", "v2");
+        assertEquals(db.get(""), "v2");
+    }
+
+    @Test(dataProvider = "options")
+    public void testEmptyValue(final Options options)
+            throws Exception
+    {
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir);
+        db.put("key", "v1");
+        assertEquals(db.get("key"), "v1");
+        db.put("key", "");
+        assertEquals(db.get("key"), "");
+        db.put("key", "v2");
+        assertEquals(db.get("key"), "v2");
+    }
+
+    @Test(dataProvider = "options")
     public void testEmptyBatch(final Options options)
             throws Exception
     {
@@ -395,7 +419,6 @@ public class DbImplTest
         assertEquals(db.get("a"), "va");
         assertEquals(db.get("f"), "vf");
         assertEquals(db.get("x"), "vx");
-
     }
 
     //TODO implement GetEncountersEmptyLevel
@@ -526,7 +549,6 @@ public class DbImplTest
             assertTrue(iterator.prev());
             assertValidKV(iterator, "a", "va");
             assertInvalid(iterator.prev(), iterator);
-
         }
     }
 
@@ -559,7 +581,6 @@ public class DbImplTest
             );
             assertFalse(iterator.valid());
         }
-
     }
 
     @Test(dataProvider = "options")
@@ -602,7 +623,6 @@ public class DbImplTest
         assertEquals(db.get("foo"), "v4");
         assertEquals(db.get("bar"), "v2");
         assertEquals(db.get("baz"), "v5");
-
     }
 
     @Test(dataProvider = "options")
@@ -636,7 +656,6 @@ public class DbImplTest
         assertEquals(db.get("bar"), "v2");
         assertEquals(db.get("big1"), longString(10000000, 'x'));
         assertEquals(db.get("big2"), longString(1000, 'y'));
-
     }
 
     @Test(dataProvider = "options")
@@ -666,7 +685,6 @@ public class DbImplTest
         for (int i = 0; i < n; i++) {
             assertEquals(db.get(key(i)), key(i) + longString(1000, 'v'));
         }
-
     }
 
     @Test(dataProvider = "options")
@@ -1096,6 +1114,50 @@ public class DbImplTest
         // Merging last-1 w/ last, so we are the base level for "foo", so
         // DEL is removed.  (as is v1).
         assertEquals(db.allEntriesFor("foo"), asList());
+    }
+
+    @Test(dataProvider = "options")
+    public void testOverlapInLevel0(final Options options)
+            throws Exception
+    {
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir);
+        assertEquals(DbConstants.MAX_MEM_COMPACT_LEVEL, 2, "Fix test to match config");
+
+        // Fill levels 1 and 2 to disable the pushing of new memtables to levels >
+        // 0.
+        db.put("100", "v100");
+        db.put("999", "v999");
+        db.testCompactMemTable();
+        db.delete("100");
+        db.delete("999");
+        db.testCompactMemTable();
+        assertEquals(db.filesPerLevel(), "0,1,1");
+
+        // Make files spanning the following ranges in level-0:
+        //  files[0]  200 .. 900
+        //  files[1]  300 .. 500
+        // Note that files are sorted by smallest key.
+        db.put("300", "v300");
+        db.put("500", "v500");
+        db.testCompactMemTable();
+        db.put("200", "v200");
+        db.put("600", "v600");
+        db.put("900", "v900");
+        db.testCompactMemTable();
+        assertEquals(db.filesPerLevel(), "2,1,1");
+
+        // Compact away the placeholder files we created initially
+        db.testCompactRange(1, null, null);
+        db.testCompactRange(2, null, null);
+        assertEquals(db.filesPerLevel(), "2");
+
+        // Do a memtable compaction.  Before bug-fix, the compaction would
+        // not detect the overlap with level-0 files and would incorrectly place
+        // the deletion in a deeper level.
+        db.delete("600");
+        db.testCompactMemTable();
+        assertEquals(db.filesPerLevel(), "3");
+        assertNull(db.get("600"));
     }
 
     @Test(dataProvider = "options")
@@ -1653,7 +1715,6 @@ public class DbImplTest
             chars[i] = (char) ((int) ' ' + random.nextInt(95));
         }
         return new String(chars);
-
     }
 
     private static String longString(int length, char character)
@@ -1925,7 +1986,6 @@ public class DbImplTest
             }
             return result.build();
         }
-
     }
 
     private static class SpecialEnv implements Env
