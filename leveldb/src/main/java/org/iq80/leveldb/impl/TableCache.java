@@ -24,6 +24,7 @@ import com.google.common.cache.RemovalListener;
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.ReadOptions;
+import org.iq80.leveldb.iterator.InternalTableIterator;
 import org.iq80.leveldb.table.BlockHandleSliceWeigher;
 import org.iq80.leveldb.table.CacheKey;
 import org.iq80.leveldb.table.FilterPolicy;
@@ -32,7 +33,6 @@ import org.iq80.leveldb.table.Table;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.ILRUCache;
-import org.iq80.leveldb.iterator.InternalTableIterator;
 import org.iq80.leveldb.util.LRUCache;
 import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
@@ -188,5 +188,10 @@ public class TableCache
         {
             return table;
         }
+    }
+
+    public long getApproximateMemoryUsage()
+    {
+        return blockCache.getApproximateMemoryUsage();
     }
 }

@@ -429,8 +429,19 @@ public class DbImpl
                 }
                 return stringBuilder.toString();
             }
-            //TODO implement sstables
-            //TODO implement approximate-memory-usage
+            else if ("sstables".equals(key)) {
+                return versions.getCurrent().toString();
+            }
+            else if ("approximate-memory-usage".equals(key)) {
+                long sizeTotal = tableCache.getApproximateMemoryUsage();
+                if (memTable != null) {
+                    sizeTotal += memTable.approximateMemoryUsage();
+                }
+                if (immutableMemTable != null) {
+                    sizeTotal += immutableMemTable.approximateMemoryUsage();
+                }
+                return Long.toUnsignedString(sizeTotal);
+            }
         }
         finally {
             mutex.unlock();

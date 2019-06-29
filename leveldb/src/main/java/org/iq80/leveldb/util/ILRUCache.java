@@ -32,6 +32,8 @@ public interface ILRUCache<K, V>
      */
     V load(final K key, Callable<V> loader) throws ExecutionException;
 
+    long getApproximateMemoryUsage();
+
     /**
      * Get a value from cache if present (already loaded)
      *

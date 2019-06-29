@@ -30,9 +30,11 @@ import java.util.concurrent.ExecutionException;
  *
  * @author Honore Vasconcelos
  */
-public final class LRUCache<K, V> implements ILRUCache<K, V>
+public final class LRUCache<K, V>
+        implements ILRUCache<K, V>
 {
     private final Cache<K, V> cache;
+    private final Weigher<K, V> weigher;
 
     private LRUCache(int capacity, final Weigher<K, V> weigher)
     {
@@ -41,6 +43,7 @@ public final class LRUCache<K, V> implements ILRUCache<K, V>
                 .weigher(weigher)
                 .concurrencyLevel(1 << 4)
                 .build();
+        this.weigher = weigher;
     }
 
     public static <K, V> ILRUCache<K, V> createCache(int capacity, final Weigher<K, V> weigher)
@@ -51,6 +54,14 @@ public final class LRUCache<K, V> implements ILRUCache<K, V>
     public V load(final K key, Callable<V> loader) throws ExecutionException
     {
         return cache.get(key, loader);
+    }
+
+    @Override
+    public long getApproximateMemoryUsage()
+    {
+        return cache.asMap().entrySet().stream()
+                .mapToLong(e -> weigher.weigh(e.getKey(), e.getValue()))
+                .sum();
     }
 
     @Override

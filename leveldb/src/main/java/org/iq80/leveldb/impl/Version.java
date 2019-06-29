@@ -63,7 +63,6 @@ public class Version
             builder.add(new Level(i, files, getTableCache(), getInternalKeyComparator()));
         }
         this.levels = builder.build();
-
     }
 
     public void assertNoOverlappingFiles(int level)
@@ -314,5 +313,25 @@ public class Version
             }
         }
         return false;
+    }
+
+    @Override
+    public String toString()
+    {
+        final StringBuilder r = new StringBuilder();
+        for (Level level : levels) {
+            r.append("--- level ");
+            r.append(level);
+            r.append(" ---").append(System.lineSeparator());
+            for (FileMetaData file : level.getFiles()) {
+                r.append(" ").append(file.getNumber()).append(";");
+                r.append(file.getFileSize()).append("[");
+                r.append(file.getSmallest());
+                r.append(" .. ");
+                r.append(file.getLargest());
+                r.append("]").append(System.lineSeparator());
+            }
+        }
+        return r.toString();
     }
 }
