@@ -132,9 +132,8 @@ public class VersionSet
             t.release();
         }
 
-        //Set<Version> versions = activeVersions.keySet();
-        // TODO:
-        // log("DB closed with "+versions.size()+" open snapshots. This could mean your application has a resource leak.");
+        Set<Version> versions = activeVersions.keySet();
+        options.logger().log("DB closed with " + versions.size() + " open snapshots. This could mean your application has a resource leak.");
     }
 
     private void appendVersion(Version version)
@@ -931,7 +930,6 @@ public class VersionSet
                 Integer level = entry.getKey();
                 Long fileNumber = entry.getValue();
                 levels.get(level).deletedFiles.add(fileNumber);
-                // todo missing update to addedFiles?
             }
 
             // Add new files

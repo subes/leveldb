@@ -35,7 +35,6 @@ public class WriteBatchImpl
     private static final int HEADER_SIZE = 12;
 
     private final List<Entry<Slice, Slice>> batch = new ArrayList<>();
-    //TODO fix this count that is wrong!!!
     private int approximateSize;
 
     @Override
