@@ -35,24 +35,35 @@ public class DbLock
     private final FileChannel channel;
     private final FileLock lock;
 
-    public DbLock(File lockFile)
-            throws IOException
+    private DbLock(File lockFile, FileChannel channel, FileLock lock)
+    {
+        this.lockFile = lockFile;
+        this.channel = channel;
+        this.lock = lock;
+    }
+
+    /**
+     * Attempts to acquire an exclusive lock on this file
+     *
+     * @param lockFile lock file
+     * @return releasable db lock
+     * @throws IOException If lock is already held or some other I/O error occurs
+     */
+    public static DbLock tryLock(File lockFile) throws IOException
     {
         requireNonNull(lockFile, "lockFile is null");
-        this.lockFile = lockFile;
-
         // open and lock the file
-        channel = new RandomAccessFile(lockFile, "rw").getChannel();
+        final FileChannel channel = new RandomAccessFile(lockFile, "rw").getChannel();
         try {
-            lock = channel.tryLock();
+            FileLock lock = channel.tryLock();
+            if (lock == null) {
+                throw new IOException(format("Unable to acquire lock on '%s'", lockFile.getAbsolutePath()));
+            }
+            return new DbLock(lockFile, channel, lock);
         }
-        catch (IOException e) {
+        catch (Exception e) {
             Closeables.closeQuietly(channel);
-            throw e;
-        }
-
-        if (lock == null) {
-            throw new IOException(format("Unable to acquire lock on '%s'", lockFile.getAbsolutePath()));
+            throw new IOException(format("Unable to acquire lock on '%s'", lockFile.getAbsolutePath()), e);
         }
     }
 

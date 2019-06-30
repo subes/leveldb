@@ -197,7 +197,7 @@ public class DbImpl
         boolean success = false;
         try {
             // lock the database dir
-            this.dbLock = new DbLock(new File(databaseDir, Filename.lockFileName()));
+            this.dbLock = DbLock.tryLock(new File(databaseDir, Filename.lockFileName()));
             c.register(dbLock::release);
             //<editor-fold desc="Recover">
             // verify the "current" file
@@ -1914,7 +1914,7 @@ public class DbImpl
 
         boolean res = true;
         File lockFile = new File(dbname, Filename.lockFileName());
-        DbLock lock = new DbLock(lockFile);
+        DbLock lock = DbLock.tryLock(lockFile);
         try {
             for (File filename : filenames) {
                 FileInfo fileInfo = Filename.parseFileName(filename);
