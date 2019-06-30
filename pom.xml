@@ -10,7 +10,7 @@
 
     <groupId>io.github.pcmind</groupId>
     <artifactId>leveldb-project</artifactId>
-    <version>1.1</version>
+    <version>1.2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>${project.groupId}:${project.artifactId}</name>
@@ -57,7 +57,7 @@
         <connection>scm:git:git://github.com/pcmind/leveldb.git</connection>
         <developerConnection>scm:git:git@github.com:pcmind/leveldb.git</developerConnection>
         <url>http://github.com/pcmind/leveldb/tree/master</url>
-      <tag>1.1</tag>
+      <tag>HEAD</tag>
     </scm>
 
     <properties>
