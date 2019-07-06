@@ -1366,8 +1366,9 @@ public class DbImpl
         compactionState.smallestSnapshot = snapshots.isEmpty() ? versions.getLastSequence() : snapshots.getOldest();
 
         // Release mutex while we're actually doing the compaction work
+        final MergingIterator mergingIterator = versions.makeInputIterator(compactionState.compaction);
         mutex.unlock();
-        try (MergingIterator iterator = versions.makeInputIterator(compactionState.compaction)) {
+        try (MergingIterator iterator = mergingIterator) {
             Slice currentUserKey = null;
             boolean hasCurrentUserKey = false;
 
@@ -1593,26 +1594,19 @@ public class DbImpl
         try {
             v = versions.getCurrent();
             v.retain();
+            try {
+                InternalKey startKey = new InternalKey(Slices.wrappedBuffer(range.start()), MAX_SEQUENCE_NUMBER, VALUE);
+                InternalKey limitKey = new InternalKey(Slices.wrappedBuffer(range.limit()), MAX_SEQUENCE_NUMBER, VALUE);
+                long startOffset = v.getApproximateOffsetOf(startKey);
+                long limitOffset = v.getApproximateOffsetOf(limitKey);
+                return (limitOffset >= startOffset ? limitOffset - startOffset : 0);
+            }
+            finally {
+                v.release();
+            }
         }
         finally {
             mutex.unlock();
-        }
-
-        try {
-            InternalKey startKey = new InternalKey(Slices.wrappedBuffer(range.start()), MAX_SEQUENCE_NUMBER, VALUE);
-            InternalKey limitKey = new InternalKey(Slices.wrappedBuffer(range.limit()), MAX_SEQUENCE_NUMBER, VALUE);
-            long startOffset = v.getApproximateOffsetOf(startKey);
-            long limitOffset = v.getApproximateOffsetOf(limitKey);
-            return (limitOffset >= startOffset ? limitOffset - startOffset : 0);
-        }
-        finally {
-            mutex.lock();
-            try {
-                v.release();
-            }
-            finally {
-                mutex.unlock();
-            }
         }
     }
 
