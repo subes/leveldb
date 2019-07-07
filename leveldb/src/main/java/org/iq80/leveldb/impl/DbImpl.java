@@ -461,6 +461,7 @@ public class DbImpl
             live.add(fileMetaData.getNumber());
         }
 
+        final List<File> filesToDelete = new ArrayList<>();
         for (File file : Filename.listFiles(databaseDir)) {
             FileInfo fileInfo = Filename.parseFileName(file);
             if (fileInfo == null) {
@@ -500,8 +501,18 @@ public class DbImpl
                 options.logger().log("Delete type=%s #%s",
                         fileInfo.getFileType(),
                         number);
-                file.delete();
+                filesToDelete.add(file);
             }
+        }
+        // While deleting all files unblock other threads. All files being deleted
+        // have unique names which will not collide with newly created files and
+        // are therefore safe to delete while allowing other threads to proceed.
+        mutex.unlock();
+        try {
+            filesToDelete.forEach(File::delete);
+        }
+        finally {
+            mutex.lock();
         }
     }
 
