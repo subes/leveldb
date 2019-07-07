@@ -154,7 +154,8 @@ public abstract class TableTest
         }
     }
 
-    private static final class KVMap extends ConcurrentSkipListMap<Slice, Slice>
+    private static final class KVMap
+            extends ConcurrentSkipListMap<Slice, Slice>
     {
         KVMap(UserComparator useComparator)
         {
@@ -227,7 +228,8 @@ public abstract class TableTest
         }
     }
 
-    private static class STLLessThan implements Comparator<Slice>
+    private static class STLLessThan
+            implements Comparator<Slice>
     {
         private UserComparator useComparator;
 
@@ -315,7 +317,8 @@ public abstract class TableTest
                 String.format("Value %s is not in range [%s, %s]", val, low, high));
     }
 
-    private abstract static class Constructor implements AutoCloseable
+    private abstract static class Constructor
+            implements AutoCloseable
     {
         private final KVMap kvMap;
         private final UserComparator comparator;
@@ -324,7 +327,6 @@ public abstract class TableTest
         {
             this.comparator = comparator;
             this.kvMap = new KVMap(this.comparator);
-
         }
 
         void add(Slice key, Slice value)
@@ -346,7 +348,6 @@ public abstract class TableTest
         {
             finish(options, comparator, kvMap);
             return kvMap;
-
         }
 
         @Override
@@ -359,7 +360,8 @@ public abstract class TableTest
         public abstract SeekingIterator<Slice, Slice> iterator();
     }
 
-    public static class TableConstructor extends Constructor
+    public static class TableConstructor
+            extends Constructor
     {
         private Table table;
 
@@ -542,7 +544,8 @@ public abstract class TableTest
         }
     }
 
-    private static class Harness<T extends Constructor> implements AutoCloseable
+    private static class Harness<T extends Constructor>
+            implements AutoCloseable
     {
         private final UserComparator comparator;
         private String desc;
@@ -725,7 +728,6 @@ public abstract class TableTest
             }
             else {
                 k = reverse(key);
-
             }
             byte[] bytes = Arrays.copyOf(k.getBytes(), k.length() + 1);
             bytes[k.length()] = 0;
@@ -763,7 +765,8 @@ public abstract class TableTest
         }
     }
 
-    private static class BlockConstructor extends Constructor
+    private static class BlockConstructor
+            extends Constructor
     {
         private Block entries;
 
@@ -793,7 +796,8 @@ public abstract class TableTest
         }
     }
 
-    private static class MemTableConstructor extends Constructor
+    private static class MemTableConstructor
+            extends Constructor
     {
         private MemTable table;
 
@@ -819,7 +823,8 @@ public abstract class TableTest
         }
     }
 
-    private static class DbConstructor extends Constructor
+    private static class DbConstructor
+            extends Constructor
     {
         private DbImpl db;
         private File tmpDir;
@@ -843,7 +848,6 @@ public abstract class TableTest
             for (Map.Entry<Slice, Slice> entry : kvMap.entrySet()) {
                 db.put(entry.getKey().getBytes(), entry.getValue().getBytes());
             }
-
         }
 
         @Override
@@ -909,7 +913,8 @@ public abstract class TableTest
         }
     }
 
-    private static class StringSource implements RandomInputFile
+    private static class StringSource
+            implements RandomInputFile
     {
         byte[] data;
 
@@ -936,7 +941,8 @@ public abstract class TableTest
         }
     }
 
-    private static class StringSink implements WritableFile
+    private static class StringSink
+            implements WritableFile
     {
         private ByteArrayOutputStream sb = new ByteArrayOutputStream();
 
@@ -1061,7 +1067,8 @@ public abstract class TableTest
         file.delete();
     }
 
-    public static class KeyConverterIterator<K1, K2, V> implements SeekingIterator<K2, V>
+    public static class KeyConverterIterator<K1, K2, V>
+            implements SeekingIterator<K2, V>
     {
         private final SeekingIterator<K1, V> it;
         private final Function<K1, K2> from;

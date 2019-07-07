@@ -78,7 +78,6 @@ public class LogReaderTest
                         (2 * BLOCK_SIZE - 1000) + 3 * HEADER_SIZE
                         + HEADER_SIZE + 1,
                 3 * BLOCK_SIZE,
-
         };
         numInitialOffsetRecords = initialOffsetLastRecordOffsets.length;
     }
@@ -628,7 +627,8 @@ public class LogReaderTest
         assertTrue(a < b, "Expect that " + a + "<" + b + " is false");
     }
 
-    private static class StringSource implements SequentialFile
+    private static class StringSource
+            implements SequentialFile
     {
         Slice contents = new Slice(0);
         boolean forceError = false;
@@ -674,7 +674,8 @@ public class LogReaderTest
         }
     }
 
-    private static class StringDest implements WritableFile
+    private static class StringDest
+            implements WritableFile
     {
         SettableByteArrayOutputStream contents = new SettableByteArrayOutputStream();
 
@@ -695,7 +696,8 @@ public class LogReaderTest
         }
     }
 
-    private static class SettableByteArrayOutputStream extends ByteArrayOutputStream
+    private static class SettableByteArrayOutputStream
+            extends ByteArrayOutputStream
     {
         //expose buffer
         public byte[] getBuf()
@@ -711,7 +713,8 @@ public class LogReaderTest
         }
     }
 
-    private static class ReportCollector implements LogMonitor
+    private static class ReportCollector
+            implements LogMonitor
     {
         int doppedBytes;
         String message = "";
