@@ -133,7 +133,9 @@ public class VersionSet
         }
 
         Set<Version> versions = activeVersions.keySet();
-        options.logger().log("DB closed with " + versions.size() + " open snapshots. This could mean your application has a resource leak.");
+        if (versions.size() > 0) {
+            options.logger().log("DB closed with %s open snapshots. This could mean your application has a resource leak.", versions.size());
+        }
     }
 
     private void appendVersion(Version version)
