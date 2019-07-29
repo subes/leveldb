@@ -1865,6 +1865,13 @@ public class DbImplTest
             return key;
         }
 
+        @Override
+        public boolean startWith(byte[] key, byte[] prefix)
+        {
+            /* Not implemented */
+            return true;
+        }
+
         private int calculateSharedBytes(byte[] leftKey, byte[] rightKey)
         {
             int sharedKeyBytes = 0;

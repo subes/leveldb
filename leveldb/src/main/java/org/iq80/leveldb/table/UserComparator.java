@@ -29,4 +29,6 @@ public interface UserComparator
     Slice findShortestSeparator(Slice start, Slice limit);
 
     Slice findShortSuccessor(Slice key);
+
+    boolean startWith(Slice key, Slice prefix);
 }

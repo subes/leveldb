@@ -18,12 +18,13 @@
 package org.iq80.leveldb.iterator;
 
 import com.google.common.base.Preconditions;
+import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.impl.InternalKey;
 import org.iq80.leveldb.impl.ValueType;
+import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.Slice;
 
 import java.io.IOException;
-import java.util.Comparator;
 
 //DbIter
 public final class SnapshotSeekingIterator
@@ -31,13 +32,23 @@ public final class SnapshotSeekingIterator
 {
     private final InternalIterator iterator;
     private final long sequence;
-    private final Comparator<Slice> userComparator;
+    private final UserComparator userComparator;
     private final Slice prefix;
     private final IRecordBytesListener listener;
     private Slice key;
     private Slice value;
 
-    public SnapshotSeekingIterator(InternalIterator iterator, long sequence, Comparator<Slice> userComparator, Slice prefix, IRecordBytesListener listener)
+    /**
+     * Create an SeekingIterate wrapper around source {@code iterator} and hide entries that are not part of specified
+     * snapshot or have been deleted.
+     *
+     * @param iterator       iterator source with deleted and non delete entries
+     * @param sequence       snapshot sequence number
+     * @param userComparator user comparator
+     * @param prefix         optional prefix to stop early when iterating a large number of deleted entries.
+     * @param listener       listener to report bytes read
+     */
+    public SnapshotSeekingIterator(InternalIterator iterator, long sequence, UserComparator userComparator, Slice prefix, IRecordBytesListener listener)
     {
         this.iterator = iterator;
         this.sequence = sequence;
@@ -55,18 +66,28 @@ public final class SnapshotSeekingIterator
     @Override
     protected boolean internalSeekToFirst()
     {
+        if (prefix != null) {
+            throw new DBException("SeekToFirst is not supported on prefix iterator");
+        }
         return iterator.seekToFirst() && findNextUserEntry(false, null);
     }
 
     @Override
     protected boolean internalSeekToLast()
     {
+        if (prefix != null) {
+            // Prefix could be used to seek first, but not last
+            throw new DBException("SeekToLast is not supported on prefix iterator");
+        }
         return iterator.seekToLast() && findPrevUserEntry();
     }
 
     @Override
     protected boolean internalSeek(Slice targetKey)
     {
+        if (prefix != null && !userComparator.startWith(targetKey, prefix)) {
+            throw new DBException("Target key does not match iterator prefix");
+        }
         return iterator.seek(new InternalKey(targetKey, sequence, ValueType.VALUE)) && findNextUserEntry(false, null);
     }
 
@@ -126,7 +147,7 @@ public final class SnapshotSeekingIterator
             if (key.getSequenceNumber() <= sequence) {
                 // Assuming one require a prefix based iterator, internally iteration may avoid reading unwanted
                 // hidden entries that are not of the user interest (do not share same prefix).
-                if (prefix != null && !prefix.isPrefixOf(key.getUserKey())) {
+                if (prefix != null && !userComparator.startWith(key.getUserKey(), prefix)) {
                     break;
                 }
                 if (valueType != ValueType.DELETION && userComparator.compare(key.getUserKey(), this.key) < 0) {
@@ -168,12 +189,12 @@ public final class SnapshotSeekingIterator
         }
         do {
             InternalKey ikey = iterator.key();
-            Slice value = iterator.value();
+            final Slice value = iterator.value();
             listener.record(ikey, ikey.size() + value.length());
             if (ikey.getSequenceNumber() <= sequence) {
                 // Assuming one require a prefix based iterator, internally iteration may avoid reading unwanted
                 // hidden entries that are not of the user interest (do not share same prefix).
-                if (skipping && prefix != null && !prefix.isPrefixOf(ikey.getUserKey())) {
+                if (skipping && prefix != null && !userComparator.startWith(ikey.getUserKey(), prefix)) {
                     break;
                 }
                 switch (ikey.getValueType()) {
@@ -206,9 +227,10 @@ public final class SnapshotSeekingIterator
     public String toString()
     {
         return "SnapshotSeekingIterator" +
-                "{sequence=" + sequence +
-                ", iterator=" + iterator +
-                '}';
+            "{sequence=" + sequence +
+            ", prefix=" + prefix +
+            ", iterator=" + iterator +
+            '}';
     }
 
     public interface IRecordBytesListener

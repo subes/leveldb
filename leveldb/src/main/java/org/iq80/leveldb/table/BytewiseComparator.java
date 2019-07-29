@@ -73,4 +73,10 @@ public class BytewiseComparator
         // key is a run of 0xffs.  Leave it alone.
         return key;
     }
+
+    @Override
+    public boolean startWith(Slice key, Slice prefix)
+    {
+        return prefix.isPrefixOf(key);
+    }
 }

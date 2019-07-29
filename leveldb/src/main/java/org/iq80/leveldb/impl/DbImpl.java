@@ -1065,17 +1065,25 @@ public class DbImpl
     @Override
     public DBIteratorAdapter iterator()
     {
-        return prefixIterator(new ReadOptions(), null);
+        return createIterator(new ReadOptions(), null);
     }
 
     @Override
     public DBIteratorAdapter iterator(ReadOptions options)
     {
-        return prefixIterator(options, null);
+        return createIterator(options, null);
     }
 
     @Override
     public DBIteratorAdapter prefixIterator(ReadOptions options, byte[] prefix)
+    {
+        if (prefix == null) {
+            throw new DBException("Prefix can't be null");
+        }
+        return createIterator(options, prefix);
+    }
+
+    private DBIteratorAdapter createIterator(ReadOptions options, byte[] prefix)
     {
         mutex.lock();
         try {

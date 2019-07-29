@@ -56,6 +56,12 @@ public class CustomUserComparator
     }
 
     @Override
+    public boolean startWith(Slice key, Slice prefix)
+    {
+        return comparator.startWith(key.getBytes(), prefix.getBytes());
+    }
+
+    @Override
     public int compare(Slice o1, Slice o2)
     {
         return comparator.compare(o1.getBytes(), o2.getBytes());

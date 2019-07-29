@@ -92,6 +92,12 @@ public class OptionsTest
         }
 
         @Override
+        public boolean startWith(byte[] key, byte[] prefix)
+        {
+            return true;
+        }
+
+        @Override
         public int compare(byte[] o1, byte[] o2)
         {
             return 0;

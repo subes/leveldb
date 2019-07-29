@@ -86,4 +86,10 @@ public class InternalUserComparator
 
         return key;
     }
+
+    @Override
+    public boolean startWith(Slice key, Slice prefix)
+    {
+        return true;
+    }
 }

@@ -907,6 +907,13 @@ public abstract class TableTest
         }
 
         @Override
+        public boolean startWith(byte[] key, byte[] prefix)
+        {
+            //not supported
+            return true;
+        }
+
+        @Override
         public int compare(byte[] a, byte[] b)
         {
             return com.compare(reverseToSlice(a), reverseToSlice(b));

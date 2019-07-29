@@ -54,4 +54,13 @@ public interface DBComparator
      * i.e., an implementation of this method that does nothing is correct.
      */
     byte[] findShortSuccessor(byte[] key);
+
+    /**
+     * Return {@code true} if key start with {@code prefix}, false otherwise.
+     * If no implementation is possible {@code true} should be returned
+     * @param key full key
+     * @param prefix prefix bytes
+     * @return {@code true} if prefix is empty or key is prefixed by {@ode prefix}
+     */
+    boolean startWith(byte[] key, byte[] prefix);
 }
