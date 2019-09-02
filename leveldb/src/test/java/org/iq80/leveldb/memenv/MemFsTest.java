@@ -15,19 +15,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.table;
+package org.iq80.leveldb.memenv;
 
-import org.iq80.leveldb.env.Env;
-import org.iq80.leveldb.fileenv.EnvImpl;
-import org.iq80.leveldb.fileenv.MmapLimiter;
+import org.iq80.leveldb.env.File;
+import org.testng.annotations.Test;
 
-public class MMRandomInputFileTableTest
-        extends TableTest
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertTrue;
+
+public class MemFsTest
 {
-    @Override
-    protected Env getEnv()
+    @Test
+    public void testListFiles()
     {
-        //force MMap files
-        return EnvImpl.createEnv(MmapLimiter.newLimiter(1000));
+        File abc = MemEnv.createEnv().createTempDir("prefix");
+        assertTrue(abc.isDirectory());
+        assertTrue(abc.exists());
+        assertFalse(abc.isFile());
     }
 }

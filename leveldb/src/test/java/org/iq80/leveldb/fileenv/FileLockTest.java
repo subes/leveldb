@@ -15,9 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.impl;
+package org.iq80.leveldb.fileenv;
 
-import org.iq80.leveldb.util.FileUtils;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -27,14 +26,14 @@ import java.io.IOException;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertTrue;
 
-public class DbLockTest
+public class FileLockTest
 {
     @Test
     public void testCanDeleteFileAfterUnlock() throws IOException
     {
         File databaseDir = FileUtils.createTempDir("leveldb");
         File lock1 = new File(databaseDir, "LOCK");
-        DbLock lock = DbLock.tryLock(lock1);
+        FileLock lock = FileLock.tryLock(lock1);
         lock.release();
         assertTrue(lock1.delete());
         assertTrue(databaseDir.delete());
@@ -46,9 +45,9 @@ public class DbLockTest
     {
         File databaseDir = FileUtils.createTempDir("leveldb");
         File lock1 = new File(databaseDir, "LOCK");
-        DbLock lock = DbLock.tryLock(lock1);
+        FileLock lock = FileLock.tryLock(lock1);
         try {
-            DbLock.tryLock(new File(databaseDir, "LOCK"));
+            FileLock.tryLock(new File(databaseDir, "LOCK"));
             Assert.fail("No expected to aquire more than once the lock");
         }
         catch (Exception e) {
@@ -62,9 +61,9 @@ public class DbLockTest
     {
         File databaseDir = FileUtils.createTempDir("leveldb");
         File lock1 = new File(databaseDir, "LOCK");
-        DbLock lock = DbLock.tryLock(lock1);
+        FileLock lock = FileLock.tryLock(lock1);
         try {
-            DbLock.tryLock(new File(databaseDir, "LOCK"));
+            FileLock.tryLock(new File(databaseDir, "LOCK"));
             Assert.fail("Can lock a already locked DB");
         }
         catch (Exception e) {

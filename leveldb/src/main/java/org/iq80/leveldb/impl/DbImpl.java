@@ -32,6 +32,10 @@ import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.Snapshot;
 import org.iq80.leveldb.WriteBatch;
 import org.iq80.leveldb.WriteOptions;
+import org.iq80.leveldb.env.DbLock;
+import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.env.File;
+import org.iq80.leveldb.env.NoOpLogger;
 import org.iq80.leveldb.impl.Filename.FileInfo;
 import org.iq80.leveldb.impl.Filename.FileType;
 import org.iq80.leveldb.impl.WriteBatchImpl.Handler;
@@ -47,15 +51,14 @@ import org.iq80.leveldb.table.TableBuilder;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.SafeListBuilder;
-import org.iq80.leveldb.util.SequentialFile;
+import org.iq80.leveldb.env.SequentialFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceInput;
 import org.iq80.leveldb.util.SliceOutput;
 import org.iq80.leveldb.util.Slices;
 import org.iq80.leveldb.util.Snappy;
-import org.iq80.leveldb.util.WritableFile;
+import org.iq80.leveldb.env.WritableFile;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -127,12 +130,13 @@ public class DbImpl
 
     private CompactionStats[] stats = new CompactionStats[DbConstants.NUM_LEVELS];
 
-    public DbImpl(Options rawOptions, File databaseDir, Env env)
+    public DbImpl(Options rawOptions, String dbname, Env env)
             throws IOException
     {
         this.env = env;
         requireNonNull(rawOptions, "options is null");
-        requireNonNull(databaseDir, "databaseDir is null");
+        requireNonNull(dbname, "databaseDir is null");
+        final File databaseDir = env.toFile(dbname);
         this.options = sanitizeOptions(databaseDir, rawOptions);
         this.ownsLogger = this.options.logger() != rawOptions.logger();
 
@@ -197,11 +201,11 @@ public class DbImpl
         boolean success = false;
         try {
             // lock the database dir
-            this.dbLock = DbLock.tryLock(new File(databaseDir, Filename.lockFileName()));
+            this.dbLock = env.tryLock(databaseDir.child(Filename.lockFileName()));
             c.register(dbLock::release);
             //<editor-fold desc="Recover">
             // verify the "current" file
-            File currentFile = new File(databaseDir, Filename.currentFileName());
+            File currentFile = databaseDir.child(Filename.currentFileName());
             if (!currentFile.canRead()) {
                 checkArgument(options.createIfMissing(), "Database '%s' does not exist and the create if missing option is disabled", databaseDir);
                 /** @see VersionSet#initializeIfNeeded() newDB() **/
@@ -225,7 +229,7 @@ public class DbImpl
             long minLogNumber = versions.getLogNumber();
             long previousLogNumber = versions.getPrevLogNumber();
             final Set<Long> expected = versions.getLiveFiles().stream().map(FileMetaData::getNumber).collect(Collectors.toSet());
-            List<File> filenames = Filename.listFiles(databaseDir);
+            List<File> filenames = databaseDir.listFiles();
 
             List<Long> logs = new ArrayList<>();
             for (File filename : filenames) {
@@ -263,7 +267,7 @@ public class DbImpl
             // open transaction log
             if (memTable == null) {
                 long logFileNumber = versions.getNextFileNumber();
-                this.log = Logs.createLogWriter(new File(databaseDir, Filename.logFileName(logFileNumber)), logFileNumber, env);
+                this.log = Logs.createLogWriter(databaseDir.child(Filename.logFileName(logFileNumber)), logFileNumber, env);
                 c.register(log);
                 edit.setLogNumber(log.getFileNumber());
                 memTable = new MemTable(internalKeyComparator);
@@ -321,8 +325,8 @@ public class DbImpl
         result.maxFileSize(clipToRange(src.maxFileSize(), 1 << 20, 1 << 30));
         result.blockSize(clipToRange(src.blockSize(), 1 << 10, 4 << 20));
         if (result.logger() == null && databaseDir != null && (databaseDir.isDirectory() || databaseDir.mkdirs())) {
-            File file = new File(databaseDir, Filename.infoLogFileName());
-            file.renameTo(new File(databaseDir, Filename.oldInfoLogFileName()));
+            File file = databaseDir.child(Filename.infoLogFileName());
+            file.renameTo(databaseDir.child(Filename.oldInfoLogFileName()));
             result.logger(env.newLogger(file));
         }
         if (result.logger() == null) {
@@ -462,7 +466,7 @@ public class DbImpl
         }
 
         final List<File> filesToDelete = new ArrayList<>();
-        for (File file : Filename.listFiles(databaseDir)) {
+        for (File file : databaseDir.listFiles()) {
             FileInfo fileInfo = Filename.parseFileName(file);
             if (fileInfo == null) {
                 continue;
@@ -708,7 +712,7 @@ public class DbImpl
             throws IOException
     {
         checkState(mutex.isHeldByCurrentThread());
-        File file = new File(databaseDir, Filename.logFileName(fileNumber));
+        File file = databaseDir.child(Filename.logFileName(fileNumber));
         try (SequentialFile in = env.newSequentialFile(file)) {
             LogMonitor logMonitor = LogMonitors.logMonitor(options.logger());
 
@@ -1219,11 +1223,11 @@ public class DbImpl
                 // open a new log
                 long logNumber = versions.getNextFileNumber();
                 try {
-                    this.log = Logs.createLogWriter(new File(databaseDir, Filename.logFileName(logNumber)), logNumber, env);
+                    this.log = Logs.createLogWriter(databaseDir.child(Filename.logFileName(logNumber)), logNumber, env);
                 }
                 catch (IOException e) {
                     throw new DBException("Unable to open new log file " +
-                            new File(databaseDir, Filename.logFileName(logNumber)).getAbsoluteFile(), e);
+                            databaseDir.child(Filename.logFileName(logNumber)).getPath(), e);
                 }
 
                 // create a new mem table
@@ -1316,7 +1320,7 @@ public class DbImpl
     private FileMetaData buildTable(MemTable data, long fileNumber)
             throws IOException
     {
-        File file = new File(databaseDir, Filename.tableFileName(fileNumber));
+        File file = databaseDir.child(Filename.tableFileName(fileNumber));
         try {
             InternalKey smallest = null;
             InternalKey largest = null;
@@ -1504,7 +1508,7 @@ public class DbImpl
         finally {
             mutex.unlock();
         }
-        File file = new File(databaseDir, Filename.tableFileName(fileNumber));
+        File file = databaseDir.child(Filename.tableFileName(fileNumber));
         compactionState.outfile = env.newWritableFile(file);
         compactionState.builder = new TableBuilder(options, compactionState.outfile, new InternalUserComparator(internalKeyComparator));
     }
@@ -1909,17 +1913,17 @@ public class DbImpl
         }
     }
 
-    public static boolean destroyDB(File dbname) throws IOException
+    public static boolean destroyDB(File dbname, Env env) throws IOException
     {
         // Ignore error in case directory does not exist
-        File[] filenames = dbname.listFiles();
-        if (filenames == null) {
+        if (!dbname.exists()) {
             return true;
         }
+        List<File> filenames = dbname.listFiles();
 
         boolean res = true;
-        File lockFile = new File(dbname, Filename.lockFileName());
-        DbLock lock = DbLock.tryLock(lockFile);
+        File lockFile = dbname.child(Filename.lockFileName());
+        DbLock lock = env.tryLock(lockFile);
         try {
             for (File filename : filenames) {
                 FileInfo fileInfo = Filename.parseFileName(filename);
@@ -2003,5 +2007,11 @@ public class DbImpl
                 throw new DBException(error);
             }
         }
+    }
+
+    @Override
+    public String toString()
+    {
+        return  this.getClass().getName() + "{" + databaseDir + "}";
     }
 }

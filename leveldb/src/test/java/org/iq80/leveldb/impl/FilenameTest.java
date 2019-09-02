@@ -18,9 +18,9 @@
 package org.iq80.leveldb.impl;
 
 import com.google.common.collect.Lists;
+import org.iq80.leveldb.fileenv.EnvImpl;
 import org.testng.annotations.Test;
 
-import java.io.File;
 import java.util.List;
 
 import static org.testng.Assert.assertEquals;
@@ -72,7 +72,7 @@ public class FilenameTest
                 "100.",
                 "100.lop");
         for (String error : errors) {
-            assertNull(Filename.parseFileName(new File(error)));
+            assertNull(Filename.parseFileName(EnvImpl.createEnv().toFile(error)));
         }
     }
 
@@ -92,7 +92,7 @@ public class FilenameTest
 
     private void assertFileInfo(String file, long expectedNumber, Filename.FileType expectedType)
     {
-        Filename.FileInfo fileInfo = Filename.parseFileName(new File(file));
+        Filename.FileInfo fileInfo = Filename.parseFileName(EnvImpl.createEnv().toFile(file));
         assertNotNull(fileInfo);
         assertEquals(fileInfo.getFileNumber(), expectedNumber);
         assertEquals(fileInfo.getFileType(), expectedType);

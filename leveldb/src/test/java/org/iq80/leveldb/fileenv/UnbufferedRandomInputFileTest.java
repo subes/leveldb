@@ -15,8 +15,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.fileenv;
 
+import org.iq80.leveldb.env.RandomInputFile;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 

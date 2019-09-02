@@ -18,13 +18,15 @@
 package org.iq80.leveldb.impl;
 
 import org.iq80.leveldb.Logger;
-import org.iq80.leveldb.util.RandomInputFile;
-import org.iq80.leveldb.util.SequentialFile;
+import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.env.DbLock;
+import org.iq80.leveldb.env.RandomInputFile;
+import org.iq80.leveldb.env.SequentialFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceOutput;
-import org.iq80.leveldb.util.WritableFile;
+import org.iq80.leveldb.env.WritableFile;
 
-import java.io.File;
+import org.iq80.leveldb.env.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ConcurrentHashMap;
@@ -54,6 +56,18 @@ public class CountingHandlesEnv implements Env
     public long nowMicros()
     {
         return env.nowMicros();
+    }
+
+    @Override
+    public File toFile(String filename)
+    {
+        return env.toFile(filename);
+    }
+
+    @Override
+    public File createTempDir(String prefix)
+    {
+        return env.createTempDir(prefix);
     }
 
     @Override
@@ -160,6 +174,12 @@ public class CountingHandlesEnv implements Env
         };
     }
 
+    @Override
+    public DbLock tryLock(File file) throws IOException
+    {
+        return env.tryLock(file);
+    }
+
     private WritableFile getWritableFile(WritableFile writableFile) throws IOException
     {
         counter.incrementAndGet();
@@ -191,5 +211,17 @@ public class CountingHandlesEnv implements Env
                 writableFile.close();
             }
         };
+    }
+
+    @Override
+    public void writeStringToFileSync(File file, String content) throws IOException
+    {
+        env.writeStringToFileSync(file, content);
+    }
+
+    @Override
+    public String readFileToString(File file) throws IOException
+    {
+        return env.readFileToString(file);
     }
 }

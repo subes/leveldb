@@ -15,7 +15,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.env;
+
+import org.iq80.leveldb.util.SliceOutput;
 
 import java.io.Closeable;
 import java.io.IOException;

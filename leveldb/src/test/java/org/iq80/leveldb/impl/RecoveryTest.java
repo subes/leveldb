@@ -21,16 +21,18 @@ import com.google.common.io.CharStreams;
 import com.google.common.io.Files;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.Snapshot;
-import org.iq80.leveldb.util.FileUtils;
+import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.env.File;
+import org.iq80.leveldb.fileenv.EnvImpl;
+import org.iq80.leveldb.fileenv.MmapLimiter;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
-import org.iq80.leveldb.util.WritableFile;
+import org.iq80.leveldb.env.WritableFile;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -42,16 +44,16 @@ import static org.testng.Assert.assertTrue;
 
 public class RecoveryTest
 {
-    private File dbname;
     private Env env;
+    private File dbname;
     private DbImpl db;
 
     @BeforeMethod
     public void setUp() throws Exception
     {
         env = EnvImpl.createEnv(MmapLimiter.newLimiter(0));
-        dbname = new File(FileUtils.createTempDir("leveldb"), "recovery_test");
-        assertTrue(DbImpl.destroyDB(dbname), "unable to close/delete previous db correctly");
+        dbname = env.createTempDir("leveldb").child("recovery_test");
+        assertTrue(DbImpl.destroyDB(dbname, env), "unable to close/delete previous db correctly");
         open(null);
     }
 
@@ -59,7 +61,8 @@ public class RecoveryTest
     public void tearDown() throws Exception
     {
         close();
-        DbImpl.destroyDB(dbname);
+        DbImpl.destroyDB(dbname, env);
+        dbname.getParentFile().deleteRecursively();
     }
 
     void close()
@@ -81,7 +84,7 @@ public class RecoveryTest
             opts.reuseLogs(true);
             opts.createIfMissing(true);
         }
-        db = new DbImpl(opts, dbname, env);
+        db = new DbImpl(opts, dbname.getPath(), env);
         assertEquals(numLogs(), 1);
     }
 
@@ -103,26 +106,26 @@ public class RecoveryTest
 
     File manifestFileName() throws IOException
     {
-        try (BufferedReader in = Files.newReader(new File(dbname, Filename.currentFileName()), StandardCharsets.UTF_8)) {
+        try (BufferedReader in = Files.newReader(new java.io.File(dbname.child(Filename.currentFileName()).getPath()), StandardCharsets.UTF_8)) {
             String current = CharStreams.toString(in);
             int len = current.length();
             if (len > 0 && current.charAt(len - 1) == '\n') {
                 current = current.substring(0, len - 1);
             }
-            return new File(dbname, current);
+            return dbname.child(current);
         }
     }
 
     File logName(long number)
     {
-        return new File(dbname, Filename.logFileName(number));
+        return dbname.child(Filename.logFileName(number));
     }
 
     long deleteLogFiles()
     {
         List<Long> logs = getFiles(Filename.FileType.LOG);
         for (Long log : logs) {
-            boolean delete = new File(dbname, Filename.logFileName(log)).delete();
+            boolean delete = dbname.child(Filename.logFileName(log)).delete();
             assertTrue(delete);
         }
         return logs.size();
@@ -168,7 +171,7 @@ public class RecoveryTest
     // Directly construct a log file that sets key to val.
     void makeLogFile(long lognum, long seq, Slice key, Slice val) throws IOException
     {
-        File fname = new File(dbname, Filename.logFileName(lognum));
+        org.iq80.leveldb.env.File fname = dbname.child(Filename.logFileName(lognum));
         try (LogWriter writer = Logs.createLogWriter(fname, lognum, env)) {
             WriteBatchImpl batch = new WriteBatchImpl();
             batch.put(key, val);
@@ -207,7 +210,7 @@ public class RecoveryTest
 
         open(null);
         File newManifest = manifestFileName();
-        assertNotEquals(newManifest.getCanonicalPath(), oldManifest.getCanonicalPath());
+        assertNotEquals(newManifest, oldManifest);
         assertTrue(10000L > fileSize(newManifest));
         assertEquals(get("foo"), "bar");
 

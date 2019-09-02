@@ -24,18 +24,18 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.MapMaker;
 import com.google.common.collect.Maps;
-import com.google.common.io.Files;
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.ReadOptions;
+import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.env.File;
 import org.iq80.leveldb.iterator.InternalIterator;
 import org.iq80.leveldb.iterator.MergingIterator;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.SafeListBuilder;
-import org.iq80.leveldb.util.SequentialFile;
+import org.iq80.leveldb.env.SequentialFile;
 import org.iq80.leveldb.util.Slice;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -54,7 +54,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 import static org.iq80.leveldb.impl.DbConstants.NUM_LEVELS;
 import static org.iq80.leveldb.impl.LogMonitors.throwExceptionMonitor;
@@ -96,7 +95,7 @@ public class VersionSet
     private void initializeIfNeeded()
             throws IOException
     {
-        File currentFile = new File(databaseDir, Filename.currentFileName());
+        File currentFile = databaseDir.child(Filename.currentFileName());
 
         if (!currentFile.exists()) {
             VersionEdit edit = new VersionEdit();
@@ -105,7 +104,7 @@ public class VersionSet
             edit.setNextFileNumber(nextFileNumber.get());
             edit.setLastSequenceNumber(lastSequence);
 
-            LogWriter log = Logs.createLogWriter(new File(databaseDir, Filename.descriptorFileName(manifestFileNumber)), manifestFileNumber, env);
+            LogWriter log = Logs.createLogWriter(databaseDir.child(Filename.descriptorFileName(manifestFileNumber)), manifestFileNumber, env);
             try {
                 writeSnapshot(log);
                 log.addRecord(edit.encode(), false);
@@ -114,7 +113,7 @@ public class VersionSet
                 log.close();
             }
 
-            Filename.setCurrentFile(databaseDir, log.getFileNumber());
+            Filename.setCurrentFile(databaseDir, log.getFileNumber(), env);
         }
     }
 
@@ -290,7 +289,7 @@ public class VersionSet
                 // No reason to unlock mutex here since we only hit this path in the
                 // first call to logAndApply (when opening the database).
                 edit.setNextFileNumber(nextFileNumber.get());
-                descriptorLog = Logs.createLogWriter(new File(databaseDir, Filename.descriptorFileName(mFileNumber)), mFileNumber, env);
+                descriptorLog = Logs.createLogWriter(databaseDir.child(Filename.descriptorFileName(mFileNumber)), mFileNumber, env);
                 writeSnapshot(descriptorLog);
                 createdNewManifest = true;
             }
@@ -304,7 +303,7 @@ public class VersionSet
                 // If we just created a new descriptor file, install it by writing a
                 // new CURRENT file that points to it.
                 if (createdNewManifest) {
-                    Filename.setCurrentFile(databaseDir, mFileNumber);
+                    Filename.setCurrentFile(databaseDir, mFileNumber, env);
                 }
             }
             finally {
@@ -317,7 +316,7 @@ public class VersionSet
             if (createdNewManifest) {
                 descriptorLog.close();
                 // todo add delete method to LogWriter
-                new File(databaseDir, Filename.logFileName(mFileNumber)).delete();
+                databaseDir.child(Filename.logFileName(mFileNumber)).delete();
                 descriptorLog = null;
             }
             throw e;
@@ -353,17 +352,10 @@ public class VersionSet
             throws IOException
     {
         // Read "CURRENT" file, which contains a pointer to the current manifest file
-        File currentFile = new File(databaseDir, Filename.currentFileName());
-        checkState(currentFile.exists(), "CURRENT file does not exist");
-
-        String descriptorName = Files.toString(currentFile, UTF_8);
-        if (descriptorName.isEmpty() || descriptorName.charAt(descriptorName.length() - 1) != '\n') {
-            throw new IllegalStateException("CURRENT file does not end with newline");
-        }
-        descriptorName = descriptorName.substring(0, descriptorName.length() - 1);
+        final String descriptorName = Filename.getCurrentFile(databaseDir, env);
 
         // open file channel
-        final File descriptorFile = new File(databaseDir, descriptorName);
+        final File descriptorFile = databaseDir.child(descriptorName);
         try (SequentialFile in = env.newSequentialFile(descriptorFile)) {
             // read log edit log
             Long nextFileNumber = null;

@@ -22,7 +22,7 @@ import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.DBFactory;
 import org.iq80.leveldb.Options;
-import org.iq80.leveldb.util.FileUtils;
+import org.iq80.leveldb.fileenv.FileUtils;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.Test;
 

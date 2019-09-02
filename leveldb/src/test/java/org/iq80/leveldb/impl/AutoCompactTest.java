@@ -21,8 +21,9 @@ import com.google.common.base.Strings;
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.Range;
+import org.iq80.leveldb.fileenv.EnvImpl;
+import org.iq80.leveldb.fileenv.FileUtils;
 import org.iq80.leveldb.iterator.DBIteratorAdapter;
-import org.iq80.leveldb.util.FileUtils;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -119,7 +120,7 @@ public class AutoCompactTest
                 .errorIfExists(true)
                 .compressionType(CompressionType.NONE)
                 .cacheSize(100); //tiny cache
-        db = new DbImpl(options, databaseDir, EnvImpl.createEnv());
+        db = new DbImpl(options, databaseDir.getAbsolutePath(), EnvImpl.createEnv());
     }
 
     @AfterMethod

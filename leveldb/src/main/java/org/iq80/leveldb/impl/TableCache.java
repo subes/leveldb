@@ -24,6 +24,7 @@ import com.google.common.cache.RemovalListener;
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.ReadOptions;
+import org.iq80.leveldb.env.Env;
 import org.iq80.leveldb.iterator.InternalTableIterator;
 import org.iq80.leveldb.table.BlockHandleSliceWeigher;
 import org.iq80.leveldb.table.CacheKey;
@@ -34,10 +35,10 @@ import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.LRUCache;
-import org.iq80.leveldb.util.RandomInputFile;
+import org.iq80.leveldb.env.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
 
-import java.io.File;
+import org.iq80.leveldb.env.File;
 import java.io.IOException;
 import java.util.concurrent.ExecutionException;
 
@@ -172,11 +173,11 @@ public class TableCache
         private File tableFileName(File databaseDir, long fileNumber)
         {
             final String tableFileName = Filename.tableFileName(fileNumber);
-            File tableFile = new File(databaseDir, tableFileName);
+            File tableFile = databaseDir.child(tableFileName);
             if (!tableFile.canRead()) {
                 // attempt to open older .sst extension
                 final String sstFileName = Filename.sstTableFileName(fileNumber);
-                final File sstPath = new File(databaseDir, sstFileName);
+                final File sstPath = databaseDir.child(sstFileName);
                 if (sstPath.canRead()) {
                     tableFile = sstPath;
                 }

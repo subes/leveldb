@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.fileenv;
 
 import com.google.common.base.Throwables;
 
@@ -27,7 +27,7 @@ import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 
-public final class ByteBufferSupport
+final class ByteBufferSupport
 {
     private static final MethodHandle INVOKE_CLEANER;
 

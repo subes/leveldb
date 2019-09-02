@@ -15,11 +15,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.impl;
+package org.iq80.leveldb.env;
 
 import org.iq80.leveldb.Logger;
 
-class NoOpLogger implements Logger
+public class NoOpLogger implements Logger
 {
     @Override
     public void log(String message)

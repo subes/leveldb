@@ -15,30 +15,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.env;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 /**
- * A file abstraction for sequential writing.  The implementation
- * must provide buffering since callers may append small fragments
- * at a time to the file.
+ * Read only data source for table data/blocks.
  *
  * @author Honore Vasconcelos
  */
-public interface WritableFile extends Closeable
+public interface RandomInputFile extends Closeable
 {
     /**
-     * Append {@code data} to current file position.
-     * @param data data to append
-     * @throws IOException on any error accessing file
+     * Source size
      */
-    void append(Slice data) throws IOException;
+    long size();
 
     /**
-     * Force sync bytes to filesystem.
-     * @throws IOException on any error accessing file
+     * Read {@code length} bytes from source from {@code source} starting at {@code offset} position.
+     * @param offset position for read start
+     * @param length length of the bytes to read
+     * @return read only view of the data.
+     * @throws IOException on any exception will accessing source media
      */
-    void force() throws IOException;
+    ByteBuffer read(long offset, int length) throws IOException;
 }

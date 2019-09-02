@@ -20,6 +20,8 @@ package org.iq80.leveldb.impl;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBFactory;
 import org.iq80.leveldb.Options;
+import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.fileenv.EnvImpl;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -28,6 +30,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.Objects.requireNonNull;
 
 /**
  * @author <a href="http://hiramchirino.com">Hiram Chirino</a>
@@ -61,14 +64,17 @@ public class Iq80DBFactory
     public DB open(File path, Options options)
             throws IOException
     {
-        return new DbImpl(options, path, EnvImpl.createEnv());
+        requireNonNull(path, "path is null");
+        return new DbImpl(options, path.getAbsolutePath(), EnvImpl.createEnv());
     }
 
     @Override
     public void destroy(File path, Options options)
             throws IOException
     {
-        DbImpl.destroyDB(path);
+        requireNonNull(path, "path is null");
+        Env env = EnvImpl.createEnv();
+        DbImpl.destroyDB(env.toFile(path.getAbsolutePath()), env);
     }
 
     @Override

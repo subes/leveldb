@@ -18,16 +18,14 @@
 package org.iq80.leveldb.impl;
 
 import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableList;
+import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.env.File;
 
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.util.List;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
 import static java.lang.Long.parseUnsignedLong;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
 public final class Filename
@@ -182,44 +180,47 @@ public final class Filename
     /**
      * Make the CURRENT file point to the descriptor file with the
      * specified number.
-     *
-     * @return true if successful; false otherwise
+     * @throws IOException on any IO exception
+     * @throws IllegalArgumentException on invalid descriptorNumber
      */
-    public static boolean setCurrentFile(File databaseDir, long descriptorNumber)
-            throws IOException
+    public static void setCurrentFile(File databaseDir, long descriptorNumber, Env env)
+        throws IOException
     {
         String manifest = descriptorFileName(descriptorNumber);
         String temp = tempFileName(descriptorNumber);
 
-        File tempFile = new File(databaseDir, temp);
-        writeStringToFileSync(manifest + "\n", tempFile);
+        File tempFile = databaseDir.child(temp);
+        env.writeStringToFileSync(tempFile, manifest + "\n");
 
-        File to = new File(databaseDir, currentFileName());
+        File to = databaseDir.child(currentFileName());
         boolean ok = tempFile.renameTo(to);
         if (!ok) {
             tempFile.delete();
-            writeStringToFileSync(manifest + "\n", to);
-        }
-        return ok;
-    }
-
-    private static void writeStringToFileSync(String str, File file)
-            throws IOException
-    {
-        try (FileOutputStream stream = new FileOutputStream(file)) {
-            stream.write(str.getBytes(UTF_8));
-            stream.flush();
-            stream.getFD().sync();
+            env.writeStringToFileSync(to, manifest + "\n");
         }
     }
 
-    public static List<File> listFiles(File dir)
+    /**
+     * Read "CURRENT" file, which contains a pointer to the current manifest file
+     *
+     * @param databaseDir DB base directory
+     * @param env system environment
+     * @return current manifest file
+     * @throws IOException on any IO exception
+     * @throws IllegalStateException if file does not exist or invalid file content
+     */
+    public static String getCurrentFile(File databaseDir, Env env)
+        throws IOException
     {
-        File[] files = dir.listFiles();
-        if (files == null) {
-            return ImmutableList.of();
+        // Read "CURRENT" file, which contains a pointer to the current manifest file
+        File currentFile = databaseDir.child(currentFileName());
+        checkState(currentFile.exists(), "CURRENT file does not exist");
+
+        String descriptorName = env.readFileToString(currentFile);
+        if (descriptorName.isEmpty() || descriptorName.charAt(descriptorName.length() - 1) != '\n') {
+            throw new IllegalStateException("CURRENT file does not end with newline");
         }
-        return ImmutableList.copyOf(files);
+        return descriptorName.substring(0, descriptorName.length() - 1);
     }
 
     /**

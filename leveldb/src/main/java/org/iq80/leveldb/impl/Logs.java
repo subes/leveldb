@@ -17,11 +17,12 @@
  */
 package org.iq80.leveldb.impl;
 
+import org.iq80.leveldb.env.Env;
 import org.iq80.leveldb.util.PureJavaCrc32C;
 import org.iq80.leveldb.util.Slice;
-import org.iq80.leveldb.util.WritableFile;
+import org.iq80.leveldb.env.WritableFile;
 
-import java.io.File;
+import org.iq80.leveldb.env.File;
 import java.io.IOException;
 
 public final class Logs

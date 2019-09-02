@@ -15,19 +15,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.impl;
+package org.iq80.leveldb.env;
 
 import org.iq80.leveldb.Logger;
-import org.iq80.leveldb.util.RandomInputFile;
-import org.iq80.leveldb.util.SequentialFile;
-import org.iq80.leveldb.util.WritableFile;
 
-import java.io.File;
 import java.io.IOException;
 
 public interface Env
 {
     long nowMicros();
+
+    /**
+     * Transform a file name into a {@link File} instance scoped to this {@link Env} instance
+     * @param filename full file name
+     * @return File instance
+     */
+    File toFile(String filename);
+
+    /**
+     * Create a temporary directory in filesystem
+     * @param prefix prefix to use as name
+     * @return newly created directory
+     */
+    File createTempDir(String prefix);
 
     /**
      * Create a brand new sequentially-readable file with the specified file name.
@@ -72,10 +82,34 @@ public interface Env
     WritableFile newAppendableFile(File file) throws IOException;
 
     /**
+     * Write {@code content} to file. Replace existing content.
+     * @param file file location
+     * @param content new content
+     * @throws IOException If the file not writable.
+     */
+    void writeStringToFileSync(File file, String content) throws IOException;
+
+    /**
+     * Read full file content to string
+     * @param file file location
+     * @throws IOException If the file not readable.
+     */
+    String readFileToString(File file) throws IOException;
+
+    /**
      * Create and return a log file for storing informational messages.
      *
      * @param loggerFile logger file
      * @return logger instance if file is writable, {@code null} otherwise
      */
     Logger newLogger(File loggerFile) throws IOException;
+
+    /**
+     * Attempts to acquire an exclusive lock on lock file
+     *
+     * @param lockFile lock file
+     * @return releasable db lock
+     * @throws IOException If lock is already held or some other I/O error occurs
+     */
+    DbLock tryLock(File lockFile) throws  IOException;
 }

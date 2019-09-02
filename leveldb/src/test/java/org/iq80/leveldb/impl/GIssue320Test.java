@@ -23,8 +23,9 @@ import org.iq80.leveldb.Options;
 import org.iq80.leveldb.Snapshot;
 import org.iq80.leveldb.WriteBatch;
 import org.iq80.leveldb.WriteOptions;
+import org.iq80.leveldb.fileenv.EnvImpl;
+import org.iq80.leveldb.fileenv.FileUtils;
 import org.iq80.leveldb.util.Closeables;
-import org.iq80.leveldb.util.FileUtils;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -84,7 +85,7 @@ public class GIssue320Test
         Map.Entry<byte[], byte[]>[] testMap = new Map.Entry[10000];
         Snapshot[] snapshots = new Snapshot[100];
 
-        db = new DbImpl(new Options().createIfMissing(true), databaseDir, EnvImpl.createEnv());
+        db = new DbImpl(new Options().createIfMissing(true), databaseDir.getAbsolutePath(), EnvImpl.createEnv());
 
         int targetSize = 10000;
         int numItems = 0;

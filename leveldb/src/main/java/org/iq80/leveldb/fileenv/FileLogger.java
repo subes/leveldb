@@ -15,9 +15,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.fileenv;
 
 import org.iq80.leveldb.Logger;
+import org.iq80.leveldb.util.LogMessageFormatter;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -27,7 +28,7 @@ import java.io.PrintStream;
 import java.time.LocalDateTime;
 import java.util.function.Supplier;
 
-public class FileLogger
+class FileLogger
         implements Logger
 {
     private final PrintStream ps;

@@ -21,7 +21,7 @@ import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceInput;
 import org.iq80.leveldb.util.SliceOutput;
 import org.iq80.leveldb.util.Slices;
-import org.iq80.leveldb.util.WritableFile;
+import org.iq80.leveldb.env.WritableFile;
 
 import java.io.Closeable;
 import java.io.IOException;

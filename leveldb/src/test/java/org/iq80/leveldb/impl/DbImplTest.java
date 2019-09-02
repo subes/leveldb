@@ -30,24 +30,27 @@ import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.Snapshot;
 import org.iq80.leveldb.WriteBatch;
 import org.iq80.leveldb.WriteOptions;
+import org.iq80.leveldb.env.DbLock;
+import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.env.File;
+import org.iq80.leveldb.env.RandomInputFile;
+import org.iq80.leveldb.env.SequentialFile;
+import org.iq80.leveldb.env.WritableFile;
+import org.iq80.leveldb.fileenv.EnvImpl;
+import org.iq80.leveldb.fileenv.FileUtils;
 import org.iq80.leveldb.iterator.InternalIterator;
 import org.iq80.leveldb.iterator.IteratorTestUtils;
 import org.iq80.leveldb.iterator.SeekingDBIteratorAdapter;
 import org.iq80.leveldb.iterator.SeekingIterator;
 import org.iq80.leveldb.table.BloomFilterPolicy;
-import org.iq80.leveldb.util.FileUtils;
-import org.iq80.leveldb.util.RandomInputFile;
-import org.iq80.leveldb.util.SequentialFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
-import org.iq80.leveldb.util.WritableFile;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
-import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
@@ -91,6 +94,7 @@ public class DbImplTest
 
     private static final String DOES_NOT_EXIST_FILENAME = "/foo/bar/doowop/idontexist";
     private static final String DOES_NOT_EXIST_FILENAME_PATTERN = ".foo.bar.doowop.idontexist";
+    private Env defaultEnv;
 
     private File databaseDir;
 
@@ -112,7 +116,7 @@ public class DbImplTest
     {
         options.maxOpenFiles(100);
         options.createIfMissing(true);
-        DbStringWrapper db = new DbStringWrapper(options, this.databaseDir, EnvImpl.createEnv());
+        DbStringWrapper db = new DbStringWrapper(options, this.databaseDir, defaultEnv);
         Random random = new Random(301);
         for (int i = 0; i < 200000 * STRESS_FACTOR; i++) {
             db.put(randomString(random, 64), new String(new byte[] {0x01}, UTF_8), new WriteOptions().sync(false));
@@ -131,7 +135,7 @@ public class DbImplTest
         options.createIfMissing(true);
         ExecutorService ex = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 4);
         try {
-            DbStringWrapper db = new DbStringWrapper(options, this.databaseDir, EnvImpl.createEnv());
+            DbStringWrapper db = new DbStringWrapper(options, this.databaseDir, defaultEnv);
             final int numEntries = 1000000;
             final int growValueBy = 10;
             final CountDownLatch segmentsToPutEnd = new CountDownLatch(numEntries / 100);
@@ -179,7 +183,7 @@ public class DbImplTest
             throws Exception
     {
         options.createIfMissing(true);
-        DbStringWrapper db = new DbStringWrapper(options, databaseDir, EnvImpl.createEnv());
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir, defaultEnv);
         for (int index = 0; index < 5000000; index++) {
             String key = "Key LOOOOOOOOOOOOOOOOOONG KEY " + index;
             String value = "This is element " + index + "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABZASDFASDKLFJASDFKJSDFLKSDJFLKJSDHFLKJHSDJFSDFHJASDFLKJSDF";
@@ -226,7 +230,8 @@ public class DbImplTest
     {
         // open new db
         options.createIfMissing(true);
-        DB db = new Iq80DBFactory().open(databaseDir, options);
+
+        DB db = new DbImpl(options, databaseDir.getPath(), defaultEnv);
 
         // write an empty batch
         WriteBatch batch = db.createWriteBatch();
@@ -237,7 +242,7 @@ public class DbImplTest
         db.close();
 
         // reopen db
-        new Iq80DBFactory().open(databaseDir, options).close();
+        new DbImpl(options, databaseDir.getPath(), defaultEnv).close();
     }
 
     @Test(dataProvider = "options")
@@ -271,7 +276,7 @@ public class DbImplTest
             throws Exception
     {
         // create db with small write buffer
-        SpecialEnv env = new SpecialEnv(EnvImpl.createEnv());
+        SpecialEnv env = new SpecialEnv(defaultEnv);
         DbStringWrapper db = new DbStringWrapper(options.writeBufferSize(100000), databaseDir, env);
         db.put("foo", "v1");
         assertEquals(db.get("foo"), "v1");
@@ -1255,28 +1260,28 @@ public class DbImplTest
     public void testCantCreateDirectoryReturnMessage()
             throws Exception
     {
-        new DbStringWrapper(new Options(), new File(DOES_NOT_EXIST_FILENAME));
+        new DbStringWrapper(new Options(), defaultEnv.toFile(DOES_NOT_EXIST_FILENAME));
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = "Database directory.*is not a directory")
     public void testDBDirectoryIsFileRetrunMessage()
             throws Exception
     {
-        File databaseFile = new File(databaseDir + "/imafile");
-        assertTrue(databaseFile.createNewFile());
+        File databaseFile = databaseDir.child("imafile");
+        defaultEnv.writeStringToFileSync(databaseFile, "");
         new DbStringWrapper(new Options(), databaseFile);
     }
 
     @Test
     public void testSymbolicLinkForFileWithoutParent()
     {
-        assertFalse(FileUtils.isSymbolicLink(new File("db")));
+        assertFalse(FileUtils.isSymbolicLink(new java.io.File("db")));
     }
 
     @Test
     public void testSymbolicLinkForFileWithParent()
     {
-        assertFalse(FileUtils.isSymbolicLink(new File(DOES_NOT_EXIST_FILENAME, "db")));
+        assertFalse(FileUtils.isSymbolicLink(new java.io.File(DOES_NOT_EXIST_FILENAME, "db")));
     }
 
     @Test(dataProvider = "options")
@@ -1350,7 +1355,7 @@ public class DbImplTest
     {
         Options options = new Options();
         options.createIfMissing(false);
-        new DbImpl(options, new File(databaseDir, "missing"), EnvImpl.createEnv());
+        new DbImpl(options, databaseDir.child("missing").getPath(), defaultEnv);
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = ".*' exists .*")
@@ -1361,7 +1366,7 @@ public class DbImplTest
             for (int i = 0; i < 2; ++i) {
                 options.createIfMissing(true);
                 options.errorIfExists(false);
-                try (DbImpl db = new DbImpl(options, databaseDir, EnvImpl.createEnv())) {
+                try (DbImpl db = new DbImpl(options, databaseDir.getPath(), defaultEnv)) {
                     //make db and close
                 }
             }
@@ -1371,13 +1376,13 @@ public class DbImplTest
         }
         options.createIfMissing(false);
         options.errorIfExists(true);
-        new DbImpl(options, databaseDir, EnvImpl.createEnv()); //reopen and should fail
+        new DbImpl(options, databaseDir.getPath(), defaultEnv); //reopen and should fail
     }
 
     @Test
     public void testDestroyEmptyDir() throws Exception
     {
-        DbImpl.destroyDB(databaseDir);
+        DbImpl.destroyDB(databaseDir, defaultEnv);
         assertFalse(databaseDir.exists());
     }
 
@@ -1393,7 +1398,7 @@ public class DbImplTest
 
         try {
             //must fail
-            DbImpl.destroyDB(databaseDir);
+            DbImpl.destroyDB(databaseDir, defaultEnv);
             Assert.fail("Destroy DB should not complete successfully");
         }
         catch (Exception e) {
@@ -1402,7 +1407,7 @@ public class DbImplTest
         db.close();
 
         // Should succeed destroying a closed db.
-        DbImpl.destroyDB(databaseDir);
+        DbImpl.destroyDB(databaseDir, defaultEnv);
         assertFalse(databaseDir.exists());
     }
 
@@ -1411,13 +1416,13 @@ public class DbImplTest
     public void testNoSpace() throws Exception
     {
         Options options = new Options();
-        SpecialEnv env = new SpecialEnv(EnvImpl.createEnv());
+        SpecialEnv env = new SpecialEnv(defaultEnv);
         DbStringWrapper db = new DbStringWrapper(options, databaseDir, env);
 
         db.put("foo", "v1");
         assertEquals(db.get("foo"), "v1");
         db.compactRange("a", "z");
-        int numFiles = Filename.listFiles(databaseDir).size();
+        int numFiles = databaseDir.listFiles().size();
         env.noSpace.set(true); // Force out-of-space errors
         for (int i = 0; i < 10; i++) {
             for (int level = 0; level < DbConstants.NUM_LEVELS - 1; level++) {
@@ -1425,7 +1430,7 @@ public class DbImplTest
             }
         }
         env.noSpace.set(false);
-        assertTrue(Filename.listFiles(databaseDir).size() < numFiles + 3);
+        assertTrue(databaseDir.listFiles().size() < numFiles + 3);
     }
 
     @Test
@@ -1433,7 +1438,7 @@ public class DbImplTest
     {
         Options options = new Options();
         options.writeBufferSize(1000);
-        SpecialEnv env = new SpecialEnv(EnvImpl.createEnv());
+        SpecialEnv env = new SpecialEnv(defaultEnv);
         DbStringWrapper db = new DbStringWrapper(options, databaseDir, env);
         db.put("foo", "v1");
         env.nonWritable.set(true);  // Force errors for new files
@@ -1458,7 +1463,7 @@ public class DbImplTest
         // Check that log sync errors cause the DB to disallow future writes.
 
         // (a) Cause log sync calls to fail
-        SpecialEnv env = new SpecialEnv(EnvImpl.createEnv());
+        SpecialEnv env = new SpecialEnv(defaultEnv);
         DbStringWrapper db = new DbStringWrapper(new Options(), databaseDir, env);
         env.dataSyncError.set(true);
 
@@ -1505,7 +1510,7 @@ public class DbImplTest
 
         // We iterate twice.  In the second iteration, everything is the
         // same except the log record never makes it to the MANIFEST file.
-        SpecialEnv specialEnv = new SpecialEnv(EnvImpl.createEnv());
+        SpecialEnv specialEnv = new SpecialEnv(defaultEnv);
         for (int iter = 0; iter < 2; iter++) {
             AtomicBoolean errorType = (iter == 0)
                     ? specialEnv.manifestSyncError
@@ -1535,14 +1540,14 @@ public class DbImplTest
             db.reopen();
             assertEquals(db.get("foo"), "bar");
             db.close();
-            FileUtils.deleteRecursively(databaseDir);
+            databaseDir.deleteRecursively();
         }
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class, expectedExceptionsMessageRegExp = ".* missing files")
     public void testMissingSSTFile() throws Exception
     {
-        DbStringWrapper db = new DbStringWrapper(new Options(), databaseDir, EnvImpl.createEnv());
+        DbStringWrapper db = new DbStringWrapper(new Options(), databaseDir, defaultEnv);
         db.put("foo", "bar");
         assertEquals(db.get("foo"), "bar");
 
@@ -1558,7 +1563,7 @@ public class DbImplTest
 
     private boolean deleteAnSSTFile()
     {
-        for (File f : Filename.listFiles(databaseDir)) {
+        for (org.iq80.leveldb.env.File f : databaseDir.listFiles()) {
             Filename.FileInfo fileInfo = Filename.parseFileName(f);
             if (fileInfo != null && fileInfo.getFileType() == Filename.FileType.TABLE) {
                 assertTrue(f.delete());
@@ -1571,7 +1576,7 @@ public class DbImplTest
     @Test
     public void testStillReadSST() throws Exception
     {
-        DbStringWrapper db = new DbStringWrapper(new Options(), databaseDir, EnvImpl.createEnv());
+        DbStringWrapper db = new DbStringWrapper(new Options(), databaseDir, defaultEnv);
         db.put("foo", "bar");
         assertEquals("bar", db.get("foo"));
 
@@ -1591,10 +1596,10 @@ public class DbImplTest
     private int renameLDBToSST()
     {
         int filesRenamed = 0;
-        for (File f : Filename.listFiles(databaseDir)) {
+        for (File f : databaseDir.listFiles()) {
             Filename.FileInfo fileInfo = Filename.parseFileName(f);
             if (fileInfo != null && fileInfo.getFileType() == Filename.FileType.TABLE) {
-                assertTrue(f.renameTo(new File(f.getParent(), Filename.sstTableFileName(fileInfo.getFileNumber()))));
+                assertTrue(f.renameTo(f.getParentFile().child(Filename.sstTableFileName(fileInfo.getFileNumber()))));
                 filesRenamed++;
             }
         }
@@ -1604,22 +1609,22 @@ public class DbImplTest
     @Test
     public void testFilesDeletedAfterCompaction() throws Exception
     {
-        File counting = new File(databaseDir, "counting");
-        DbStringWrapper db = new DbStringWrapper(new Options(), counting, EnvImpl.createEnv());
+        File counting = databaseDir.child("counting");
+        DbStringWrapper db = new DbStringWrapper(new Options(), counting, defaultEnv);
         db.put("foo", "v2");
         db.compactRange("a", "z");
-        int files = Filename.listFiles(databaseDir).size();
+        int files = databaseDir.listFiles().size();
         for (int i = 0; i < 10; i++) {
             db.put("foo", "v2");
             db.compactRange("a", "z");
         }
-        assertEquals(Filename.listFiles(databaseDir).size(), files);
+        assertEquals(databaseDir.listFiles().size(), files);
     }
 
     @Test
     public void testBloomFilter() throws Exception
     {
-        SpecialEnv env = new SpecialEnv(EnvImpl.createEnv());
+        SpecialEnv env = new SpecialEnv(defaultEnv);
         env.countRandomReads = true;
         Options options = new Options()
                 .filterPolicy(new BloomFilterPolicy(10))
@@ -1667,7 +1672,7 @@ public class DbImplTest
     public void testFileHandlesClosed(final Options options) throws Exception
     {
         assertTrue(options.maxOpenFiles() > 2); //for this test to work
-        DbStringWrapper db = new DbStringWrapper(options, databaseDir, EnvImpl.createEnv());
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir, defaultEnv);
         fillLevels(db, "A", "C");
         assertNotNull(db.get("A"));
         assertNull(db.get("A.missing"));
@@ -1743,7 +1748,8 @@ public class DbImplTest
     @BeforeMethod
     public void setUp()
     {
-        databaseDir = FileUtils.createTempDir("leveldb");
+        defaultEnv = EnvImpl.createEnv();
+        databaseDir = defaultEnv.createTempDir("leveldb");
     }
 
     @AfterMethod
@@ -1753,9 +1759,9 @@ public class DbImplTest
             db.close();
         }
         opened.clear();
-        boolean b = FileUtils.deleteRecursively(databaseDir);
+        boolean b = databaseDir.deleteRecursively();
         //assertion is specially useful in windows
-        assertFalse(!b && databaseDir.exists(), "Dir should be possible to delete! All files should have been released. Existing files: " + FileUtils.listFiles(databaseDir));
+        assertFalse(!b && databaseDir.exists(), "Dir should be possible to delete! All files should have been released. Existing files: " + databaseDir.listFiles());
     }
 
     private void assertBetween(long actual, int smallest, int greatest)
@@ -1890,7 +1896,7 @@ public class DbImplTest
         private DbStringWrapper(Options options, File databaseDir)
                 throws IOException
         {
-            this(options, databaseDir, EnvImpl.createEnv());
+            this(options, databaseDir, defaultEnv);
         }
 
         private DbStringWrapper(Options options, File databaseDir, Env env)
@@ -1899,7 +1905,7 @@ public class DbImplTest
             this.options = options.paranoidChecks(true).createIfMissing(true).errorIfExists(true);
             this.databaseDir = databaseDir;
             env1 = new CountingHandlesEnv(env);
-            this.db = new DbImpl(options, databaseDir, env1);
+            this.db = new DbImpl(options, databaseDir.getPath(), env1);
             opened.add(this);
         }
 
@@ -2039,7 +2045,7 @@ public class DbImplTest
                 throws IOException
         {
             db.close();
-            db = new DbImpl(options.paranoidChecks(true).createIfMissing(false).errorIfExists(false), databaseDir, EnvImpl.createEnv());
+            db = new DbImpl(options.paranoidChecks(true).createIfMissing(false).errorIfExists(false), databaseDir.getPath(), defaultEnv);
         }
 
         private List<String> allEntriesFor(String userKey) throws IOException
@@ -2099,13 +2105,25 @@ public class DbImplTest
         }
 
         @Override
-        public SequentialFile newSequentialFile(File file) throws IOException
+        public org.iq80.leveldb.env.File toFile(String filename)
+        {
+            return env.toFile(filename);
+        }
+
+        @Override
+        public org.iq80.leveldb.env.File createTempDir(String prefix)
+        {
+            return env.createTempDir(prefix);
+        }
+
+        @Override
+        public SequentialFile newSequentialFile(org.iq80.leveldb.env.File file) throws IOException
         {
             return env.newSequentialFile(file);
         }
 
         @Override
-        public RandomInputFile newRandomAccessFile(File file) throws IOException
+        public RandomInputFile newRandomAccessFile(org.iq80.leveldb.env.File file) throws IOException
         {
             RandomInputFile randomInputFile = env.newRandomAccessFile(file);
             if (countRandomReads) {
@@ -2115,7 +2133,7 @@ public class DbImplTest
         }
 
         @Override
-        public WritableFile newWritableFile(File file) throws IOException
+        public WritableFile newWritableFile(org.iq80.leveldb.env.File file) throws IOException
         {
             if (nonWritable.get()) {
                 throw new IOException("simulated write error");
@@ -2129,15 +2147,33 @@ public class DbImplTest
         }
 
         @Override
-        public WritableFile newAppendableFile(File file) throws IOException
+        public WritableFile newAppendableFile(org.iq80.leveldb.env.File file) throws IOException
         {
             return env.newAppendableFile(file);
         }
 
         @Override
-        public Logger newLogger(File loggerFile) throws IOException
+        public Logger newLogger(org.iq80.leveldb.env.File loggerFile) throws IOException
         {
             return env.newLogger(loggerFile);
+        }
+
+        @Override
+        public DbLock tryLock(org.iq80.leveldb.env.File file) throws IOException
+        {
+            return env.tryLock(file);
+        }
+
+        @Override
+        public void writeStringToFileSync(File file, String content) throws IOException
+        {
+            env.writeStringToFileSync(file, content);
+        }
+
+        @Override
+        public String readFileToString(File file) throws IOException
+        {
+            return env.readFileToString(file);
         }
 
         private class CountingFile implements RandomInputFile

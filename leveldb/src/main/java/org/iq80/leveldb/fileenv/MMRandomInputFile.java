@@ -15,9 +15,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.fileenv;
 
 import com.google.common.io.Files;
+import org.iq80.leveldb.env.RandomInputFile;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,7 +33,7 @@ import static java.util.Objects.requireNonNull;
  *
  * @author Honore Vasconcelos
  */
-public class MMRandomInputFile implements RandomInputFile
+class MMRandomInputFile implements RandomInputFile
 {
     private final String file;
     private final long size;

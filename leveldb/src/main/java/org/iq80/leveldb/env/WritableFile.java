@@ -15,19 +15,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.table;
+package org.iq80.leveldb.env;
 
-import org.iq80.leveldb.env.Env;
-import org.iq80.leveldb.fileenv.EnvImpl;
-import org.iq80.leveldb.fileenv.MmapLimiter;
+import org.iq80.leveldb.util.Slice;
 
-public class MMRandomInputFileTableTest
-        extends TableTest
+import java.io.Closeable;
+import java.io.IOException;
+
+/**
+ * A file abstraction for sequential writing.  The implementation
+ * must provide buffering since callers may append small fragments
+ * at a time to the file.
+ *
+ * @author Honore Vasconcelos
+ */
+public interface WritableFile extends Closeable
 {
-    @Override
-    protected Env getEnv()
-    {
-        //force MMap files
-        return EnvImpl.createEnv(MmapLimiter.newLimiter(1000));
-    }
+    /**
+     * Append {@code data} to current file position.
+     * @param data data to append
+     * @throws IOException on any error accessing file
+     */
+    void append(Slice data) throws IOException;
+
+    /**
+     * Force sync bytes to filesystem.
+     * @throws IOException on any error accessing file
+     */
+    void force() throws IOException;
 }

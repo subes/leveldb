@@ -15,23 +15,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.impl;
+package org.iq80.leveldb.fileenv;
 
+import com.google.common.io.Files;
+import org.iq80.leveldb.env.DbLock;
+import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.env.File;
 import org.iq80.leveldb.Logger;
-import org.iq80.leveldb.util.MMRandomInputFile;
-import org.iq80.leveldb.util.MMWritableFile;
-import org.iq80.leveldb.util.RandomInputFile;
-import org.iq80.leveldb.util.SequentialFile;
-import org.iq80.leveldb.util.SequentialFileImpl;
+import org.iq80.leveldb.env.NoOpLogger;
+import org.iq80.leveldb.env.RandomInputFile;
+import org.iq80.leveldb.env.SequentialFile;
+import org.iq80.leveldb.env.WritableFile;
 import org.iq80.leveldb.util.Slice;
-import org.iq80.leveldb.util.UnbufferedRandomInputFile;
-import org.iq80.leveldb.util.UnbufferedWritableFile;
-import org.iq80.leveldb.util.WritableFile;
 
-import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.TimeUnit;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class EnvImpl implements Env
 {
@@ -60,9 +62,21 @@ public class EnvImpl implements Env
     }
 
     @Override
+    public File toFile(String filename)
+    {
+        return JavaFile.fromFile(new java.io.File(filename));
+    }
+
+    @Override
+    public File createTempDir(String prefix)
+    {
+        return JavaFile.fromFile(FileUtils.createTempDir(prefix));
+    }
+
+    @Override
     public SequentialFile newSequentialFile(File file) throws IOException
     {
-        return SequentialFileImpl.open(file);
+        return SequentialFileImpl.open(JavaFile.toFile(file));
     }
 
     @Override
@@ -70,14 +84,14 @@ public class EnvImpl implements Env
     {
         if (mmapLimiter.acquire()) {
             try {
-                return new DelegateRandomInputFile(mmapLimiter, MMRandomInputFile.open(file));
+                return new DelegateRandomInputFile(mmapLimiter, MMRandomInputFile.open(JavaFile.toFile(file)));
             }
             catch (IOException e) {
                 mmapLimiter.release();
                 throw e;
             }
         }
-        return UnbufferedRandomInputFile.open(file);
+        return UnbufferedRandomInputFile.open(JavaFile.toFile(file));
     }
 
     @Override
@@ -85,26 +99,55 @@ public class EnvImpl implements Env
     {
         if (mmapLimiter.acquire()) {
             try {
-                return new DelegateWritableFile(mmapLimiter, MMWritableFile.open(file, PAGE_SIZE));
+                return new DelegateWritableFile(mmapLimiter, MMWritableFile.open(JavaFile.toFile(file), PAGE_SIZE));
             }
             catch (IOException e) {
                 mmapLimiter.release();
                 throw e;
             }
         }
-        return UnbufferedWritableFile.open(file, false);
+        return UnbufferedWritableFile.open(JavaFile.toFile(file), false);
     }
 
     @Override
     public WritableFile newAppendableFile(File file) throws IOException
     {
-        return UnbufferedWritableFile.open(file, true);
+        return UnbufferedWritableFile.open(JavaFile.toFile(file), true);
+    }
+
+    @Override
+    public void writeStringToFileSync(File file, String content) throws IOException
+    {
+        try (FileOutputStream stream = new FileOutputStream(JavaFile.toFile(file))) {
+            stream.write(content.getBytes(UTF_8));
+            stream.flush();
+            stream.getFD().sync();
+        }
+    }
+
+    @Override
+    public String readFileToString(File file) throws IOException
+    {
+        return Files.asCharSource(JavaFile.toFile(file), UTF_8).read();
     }
 
     @Override
     public Logger newLogger(File loggerFile) throws IOException
     {
         return new NoOpLogger(); //different that native but avoid for ever growing log file
+    }
+
+    /**
+     * Attempts to acquire an exclusive lock on this file
+     *
+     * @param file lock file
+     * @return releasable db lock
+     * @throws IOException If lock is already held or some other I/O error occurs
+     */
+    @Override
+    public DbLock tryLock(File file) throws IOException
+    {
+        return FileLock.tryLock(JavaFile.toFile(file));
     }
 
     private static class DelegateRandomInputFile implements RandomInputFile

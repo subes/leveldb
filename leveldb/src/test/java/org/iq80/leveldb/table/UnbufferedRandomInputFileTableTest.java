@@ -17,29 +17,17 @@
  */
 package org.iq80.leveldb.table;
 
-import org.iq80.leveldb.util.Closeables;
-import org.iq80.leveldb.util.LRUCache;
-import org.iq80.leveldb.util.RandomInputFile;
-import org.iq80.leveldb.util.Slice;
-import org.iq80.leveldb.util.UnbufferedRandomInputFile;
-
-import java.io.File;
-import java.util.Comparator;
+import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.fileenv.EnvImpl;
+import org.iq80.leveldb.fileenv.MmapLimiter;
 
 public class UnbufferedRandomInputFileTableTest
         extends TableTest
 {
     @Override
-    protected Table createTable(File file, Comparator<Slice> comparator, boolean verifyChecksums, FilterPolicy filterPolicy)
-            throws Exception
+    protected Env getEnv()
     {
-        RandomInputFile open = UnbufferedRandomInputFile.open(file);
-        try {
-            return new Table(open, comparator, verifyChecksums, LRUCache.createCache(8 << 5, new BlockHandleSliceWeigher()), filterPolicy);
-        }
-        catch (Exception e) {
-            Closeables.closeQuietly(open);
-            throw e;
-        }
+        //disable memory mapped files
+        return EnvImpl.createEnv(MmapLimiter.newLimiter(0));
     }
 }

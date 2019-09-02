@@ -17,7 +17,7 @@
  */
 package org.iq80.leveldb.impl;
 
-import org.iq80.leveldb.util.SequentialFile;
+import org.iq80.leveldb.env.SequentialFile;
 import org.iq80.leveldb.util.DynamicSliceOutput;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceInput;

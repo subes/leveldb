@@ -18,16 +18,14 @@
 package org.iq80.leveldb.table;
 
 import org.iq80.leveldb.env.Env;
-import org.iq80.leveldb.fileenv.EnvImpl;
-import org.iq80.leveldb.fileenv.MmapLimiter;
+import org.iq80.leveldb.memenv.MemEnv;
 
-public class MMRandomInputFileTableTest
-        extends TableTest
+public class InMemoryTableTest
+    extends TableTest
 {
     @Override
     protected Env getEnv()
     {
-        //force MMap files
-        return EnvImpl.createEnv(MmapLimiter.newLimiter(1000));
+        return MemEnv.createEnv();
     }
 }

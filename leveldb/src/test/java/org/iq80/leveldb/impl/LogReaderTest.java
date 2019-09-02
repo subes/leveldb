@@ -20,10 +20,10 @@ package org.iq80.leveldb.impl;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import org.iq80.leveldb.util.PureJavaCrc32C;
-import org.iq80.leveldb.util.SequentialFile;
+import org.iq80.leveldb.env.SequentialFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceOutput;
-import org.iq80.leveldb.util.WritableFile;
+import org.iq80.leveldb.env.WritableFile;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 

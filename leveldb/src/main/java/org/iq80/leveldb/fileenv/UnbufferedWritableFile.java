@@ -15,7 +15,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.fileenv;
+
+import org.iq80.leveldb.util.Slice;
+import org.iq80.leveldb.env.WritableFile;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -26,7 +29,7 @@ import java.nio.channels.FileChannel;
 /**
  * @author Honore Vasconcelos
  */
-public class UnbufferedWritableFile implements WritableFile
+class UnbufferedWritableFile implements WritableFile
 {
     private final File file;
     private final FileChannel channel;

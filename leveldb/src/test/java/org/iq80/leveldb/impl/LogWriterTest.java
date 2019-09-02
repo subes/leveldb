@@ -17,10 +17,10 @@
  */
 package org.iq80.leveldb.impl;
 
-import org.iq80.leveldb.util.SequentialFile;
+import org.iq80.leveldb.env.SequentialFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceOutput;
-import org.iq80.leveldb.util.WritableFile;
+import org.iq80.leveldb.env.WritableFile;
 import org.testng.annotations.Test;
 
 import java.io.ByteArrayInputStream;

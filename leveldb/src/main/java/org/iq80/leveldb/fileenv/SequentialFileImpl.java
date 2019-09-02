@@ -15,7 +15,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.fileenv;
+
+import org.iq80.leveldb.env.SequentialFile;
+import org.iq80.leveldb.util.SliceOutput;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -23,7 +26,7 @@ import java.io.IOException;
 
 import static com.google.common.base.Preconditions.checkState;
 
-public class SequentialFileImpl implements SequentialFile
+class SequentialFileImpl implements SequentialFile
 {
     private final FileInputStream inputStream;
 

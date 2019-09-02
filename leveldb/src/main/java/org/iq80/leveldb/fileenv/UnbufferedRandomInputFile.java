@@ -15,7 +15,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.fileenv;
+
+import org.iq80.leveldb.env.RandomInputFile;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -32,7 +34,7 @@ import static java.util.Objects.requireNonNull;
 /**
  * @author Honore Vasconcelos
  */
-public class UnbufferedRandomInputFile implements RandomInputFile
+class UnbufferedRandomInputFile implements RandomInputFile
 {
     private static final int MAX_RETRY = Integer.getInteger(" org.iq80.leveldb.FileChannel.RETRY", 1000);
     private final Object lock = new Object();

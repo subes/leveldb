@@ -15,30 +15,41 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.memenv;
 
-import java.io.Closeable;
+import org.iq80.leveldb.env.WritableFile;
+import org.iq80.leveldb.util.Slice;
+
 import java.io.IOException;
-import java.nio.ByteBuffer;
+import java.nio.channels.ClosedChannelException;
 
-/**
- * Read only data source for table data/blocks.
- *
- * @author Honore Vasconcelos
- */
-public interface RandomInputFile extends Closeable
+class MemWritableFile implements WritableFile
 {
-    /**
-     * Source size
-     */
-    long size();
+    private final FileState fileState;
+    private boolean closed;
 
-    /**
-     * Read {@code length} bytes from source from {@code source} starting at {@code offset} position.
-     * @param offset position for read start
-     * @param length length of the bytes to read
-     * @return read only view of the data.
-     * @throws IOException on any exception will accessing source media
-     */
-    ByteBuffer read(long offset, int length) throws IOException;
+    public MemWritableFile(FileState fileState)
+    {
+        this.fileState = fileState;
+    }
+
+    @Override
+    public void append(Slice data) throws IOException
+    {
+        if (closed) {
+            throw new ClosedChannelException();
+        }
+        fileState.append(data);
+    }
+
+    @Override
+    public void force() throws IOException
+    {
+    }
+
+    @Override
+    public void close() throws IOException
+    {
+        closed = true;
+    }
 }

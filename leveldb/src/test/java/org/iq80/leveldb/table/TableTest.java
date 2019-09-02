@@ -22,33 +22,32 @@ import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DBComparator;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.ReadOptions;
+import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.env.File;
+import org.iq80.leveldb.env.RandomInputFile;
+import org.iq80.leveldb.env.WritableFile;
 import org.iq80.leveldb.impl.CountingHandlesEnv;
 import org.iq80.leveldb.impl.DbConstants;
 import org.iq80.leveldb.impl.DbImpl;
-import org.iq80.leveldb.impl.EnvImpl;
 import org.iq80.leveldb.impl.InternalKey;
 import org.iq80.leveldb.impl.InternalKeyComparator;
 import org.iq80.leveldb.impl.MemTable;
 import org.iq80.leveldb.impl.ValueType;
 import org.iq80.leveldb.iterator.SeekingDBIteratorAdapter;
 import org.iq80.leveldb.iterator.SeekingIterator;
-import org.iq80.leveldb.util.FileUtils;
+import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.LRUCache;
-import org.iq80.leveldb.util.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
 import org.iq80.leveldb.util.Snappy;
 import org.iq80.leveldb.util.TestUtils;
-import org.iq80.leveldb.util.UnbufferedWritableFile;
-import org.iq80.leveldb.util.WritableFile;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -74,10 +73,21 @@ import static org.testng.Assert.assertTrue;
 
 public abstract class TableTest
 {
+    private Env defaultEnv;
     private File file;
 
-    protected abstract Table createTable(File file, Comparator<Slice> comparator, boolean verifyChecksums, FilterPolicy filterPolicy)
-            throws Exception;
+    private Table createTable(File file, Comparator<Slice> comparator, boolean verifyChecksums, FilterPolicy filterPolicy)
+        throws Exception
+    {
+        RandomInputFile open = defaultEnv.newRandomAccessFile(file);
+        try {
+            return new Table(open, comparator, verifyChecksums, LRUCache.createCache(8 << 5, new BlockHandleSliceWeigher()), filterPolicy);
+        }
+        catch (Exception e) {
+            Closeables.closeQuietly(open);
+            throw e;
+        }
+    }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testEmptyFile()
@@ -260,7 +270,7 @@ public abstract class TableTest
         final Options options = new Options();
         options.blockSize(1024);
         options.compressionType(CompressionType.NONE);
-        c.finish(options);
+        c.finish(options, defaultEnv);
 
         assertBetween(c.approximateOffsetOf("abc"), 0, 0);
         assertBetween(c.approximateOffsetOf("k01"), 0, 0);
@@ -293,7 +303,7 @@ public abstract class TableTest
         Options options = new Options();
         options.blockSize(1024);
         options.compressionType(CompressionType.SNAPPY);
-        c.finish(options);
+        c.finish(options, defaultEnv);
 
         // Expected upper and lower bounds of space used by compressible strings.
         int kSlop = 1000;  // Compressor effectiveness varies.
@@ -344,9 +354,9 @@ public abstract class TableTest
             add(key, asciiToSlice(value));
         }
 
-        public final KVMap finish(Options options) throws IOException
+        public final KVMap finish(Options options, Env env) throws IOException
         {
-            finish(options, comparator, kvMap);
+            finish(options, env, comparator, kvMap);
             return kvMap;
         }
 
@@ -355,7 +365,7 @@ public abstract class TableTest
         {
         }
 
-        protected abstract void finish(Options options, UserComparator comparator, KVMap kvMap) throws IOException;
+        protected abstract void finish(Options options, Env env, UserComparator comparator, KVMap kvMap) throws IOException;
 
         public abstract SeekingIterator<Slice, Slice> iterator();
     }
@@ -371,7 +381,7 @@ public abstract class TableTest
         }
 
         @Override
-        protected void finish(Options options, UserComparator comp, KVMap data) throws IOException
+        protected void finish(Options options, Env env, UserComparator comp, KVMap data) throws IOException
         {
             StringSink sink = new StringSink();
             TableBuilder builder = new TableBuilder(options, sink, comp);
@@ -445,7 +455,7 @@ public abstract class TableTest
     public void testEmpty(Harness harness) throws Exception
     {
         try {
-            harness.test();
+            harness.test(defaultEnv);
         }
         finally {
             harness.close();
@@ -457,7 +467,7 @@ public abstract class TableTest
     {
         try {
             harness.add(Slices.EMPTY_SLICE, asciiToSlice("v"));
-            harness.test();
+            harness.test(defaultEnv);
         }
         finally {
             harness.close();
@@ -469,7 +479,7 @@ public abstract class TableTest
     {
         try {
             harness.add(asciiToSlice("abc"), asciiToSlice("v"));
-            harness.test();
+            harness.test(defaultEnv);
         }
         finally {
             harness.close();
@@ -483,7 +493,7 @@ public abstract class TableTest
             harness.add(asciiToSlice("abc"), asciiToSlice("v"));
             harness.add(asciiToSlice("abcd"), asciiToSlice("v"));
             harness.add(asciiToSlice("ac"), asciiToSlice("v2"));
-            harness.test();
+            harness.test(defaultEnv);
         }
         finally {
             harness.close();
@@ -495,7 +505,7 @@ public abstract class TableTest
     {
         try {
             harness.add(Slices.wrappedBuffer(new byte[] {-1, -1}), asciiToSlice("v3"));
-            harness.test();
+            harness.test(defaultEnv);
         }
         finally {
             harness.close();
@@ -517,7 +527,7 @@ public abstract class TableTest
                             TestUtils.randomString(rnd, harness.getRandomSkewed(5)));
                 }
             }
-            harness.test();
+            harness.test(defaultEnv);
         }
         finally {
             harness.close();
@@ -534,7 +544,7 @@ public abstract class TableTest
                 harness.add(new Slice(TestUtils.randomKey(rnd, harness.getRandomSkewed(4))),
                         TestUtils.randomString(rnd, harness.getRandomSkewed(5)));
             }
-            harness.test();
+            harness.test(defaultEnv);
             // We must have created enough data to force merging
             int files = 0;
             for (int level = 0; level < DbConstants.NUM_LEVELS; level++) {
@@ -743,9 +753,9 @@ public abstract class TableTest
             return new Slice(bytes);
         }
 
-        void test() throws IOException
+        void test(Env env) throws IOException
         {
-            KVMap data = constructor.finish(options);
+            KVMap data = constructor.finish(options, env);
 
             testForwardScan(data);
             testBackwardScan(data);
@@ -782,7 +792,7 @@ public abstract class TableTest
         }
 
         @Override
-        protected void finish(Options options, UserComparator cmp, KVMap map) throws IOException
+        protected void finish(Options options, Env env, UserComparator cmp, KVMap map) throws IOException
         {
             BlockBuilder builder = new BlockBuilder(256, options.blockRestartInterval(), cmp);
 
@@ -807,7 +817,7 @@ public abstract class TableTest
         }
 
         @Override
-        protected void finish(Options options, UserComparator comparator, KVMap kvMap) throws IOException
+        protected void finish(Options options, Env env, UserComparator comparator, KVMap kvMap) throws IOException
         {
             table = new MemTable(new InternalKeyComparator(comparator));
             int seq = 1;
@@ -836,15 +846,15 @@ public abstract class TableTest
         }
 
         @Override
-        protected void finish(Options options, UserComparator comparator, KVMap kvMap) throws IOException
+        protected void finish(Options options, Env env, UserComparator comparator, KVMap kvMap) throws IOException
         {
             options
                     .createIfMissing(true)
                     .errorIfExists(true)
                     .writeBufferSize(10000);  // Something small to force merging
-            tmpDir = FileUtils.createTempDir("leveldb");
-            env = new CountingHandlesEnv(EnvImpl.createEnv());
-            this.db = new DbImpl(options, tmpDir, env);
+            tmpDir = env.createTempDir("leveldb");
+            this.env = new CountingHandlesEnv(env);
+            this.db = new DbImpl(options, tmpDir.getPath(), this.env);
             for (Map.Entry<Slice, Slice> entry : kvMap.entrySet()) {
                 db.put(entry.getKey().getBytes(), entry.getValue().getBytes());
             }
@@ -862,7 +872,7 @@ public abstract class TableTest
             super.close();
             db.close();
             assertEquals(env.getOpenHandles(), 0, "All files should have been closed (validate all iterables should be closed)");
-            FileUtils.deleteRecursively(tmpDir);
+            assertTrue(!tmpDir.exists() || tmpDir.deleteRecursively());
         }
     }
 
@@ -980,7 +990,7 @@ public abstract class TableTest
     {
         reopenFile();
         Options options = new Options().blockSize(blockSize).blockRestartInterval(blockRestartInterval);
-        try (WritableFile writableFile = UnbufferedWritableFile.open(file, false)) {
+        try (WritableFile writableFile = defaultEnv.newWritableFile(defaultEnv.toFile(file.getPath()))) {
             TableBuilder builder = new TableBuilder(options, writableFile, new BytewiseComparator());
 
             for (BlockEntry entry : entries) {
@@ -1055,16 +1065,19 @@ public abstract class TableTest
         if (file != null) {
             file.delete();
         }
-        file = File.createTempFile("table", ".db");
+        defaultEnv = getEnv();
+        file = defaultEnv.createTempDir("leveldb_file").child("table.db");
         file.delete();
-        com.google.common.io.Files.touch(file);
+        defaultEnv.writeStringToFileSync(file, "");
     }
+
+    protected abstract Env getEnv();
 
     @AfterMethod
     public void tearDown()
             throws Exception
     {
-        file.delete();
+        file.getParentFile().deleteRecursively();
     }
 
     public static class KeyConverterIterator<K1, K2, V>

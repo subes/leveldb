@@ -15,27 +15,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.impl;
+package org.iq80.leveldb.fileenv;
 
 import org.iq80.leveldb.DBException;
+import org.iq80.leveldb.env.DbLock;
 import org.iq80.leveldb.util.Closeables;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
-public class DbLock
+class FileLock implements DbLock
 {
     private final File lockFile;
     private final FileChannel channel;
-    private final FileLock lock;
+    private final java.nio.channels.FileLock lock;
 
-    private DbLock(File lockFile, FileChannel channel, FileLock lock)
+    private FileLock(File lockFile, FileChannel channel, java.nio.channels.FileLock lock)
     {
         this.lockFile = lockFile;
         this.channel = channel;
@@ -49,17 +49,17 @@ public class DbLock
      * @return releasable db lock
      * @throws IOException If lock is already held or some other I/O error occurs
      */
-    public static DbLock tryLock(File lockFile) throws IOException
+    public static FileLock tryLock(File lockFile) throws IOException
     {
         requireNonNull(lockFile, "lockFile is null");
         // open and lock the file
         final FileChannel channel = new RandomAccessFile(lockFile, "rw").getChannel();
         try {
-            FileLock lock = channel.tryLock();
+            java.nio.channels.FileLock lock = channel.tryLock();
             if (lock == null) {
                 throw new IOException(format("Unable to acquire lock on '%s'", lockFile.getAbsolutePath()));
             }
-            return new DbLock(lockFile, channel, lock);
+            return new FileLock(lockFile, channel, lock);
         }
         catch (Exception e) {
             Closeables.closeQuietly(channel);
@@ -67,11 +67,13 @@ public class DbLock
         }
     }
 
+    @Override
     public boolean isValid()
     {
         return lock.isValid();
     }
 
+    @Override
     public void release()
     {
         try (FileChannel closeMe = channel) {

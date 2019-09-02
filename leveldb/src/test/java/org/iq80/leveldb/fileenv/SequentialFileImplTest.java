@@ -15,8 +15,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.fileenv;
 
+import org.iq80.leveldb.util.DynamicSliceOutput;
+import org.iq80.leveldb.env.SequentialFile;
+import org.iq80.leveldb.util.Slice;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;

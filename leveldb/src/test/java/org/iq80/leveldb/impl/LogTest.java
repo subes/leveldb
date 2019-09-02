@@ -18,8 +18,9 @@
 package org.iq80.leveldb.impl;
 
 import com.google.common.collect.ImmutableList;
-import org.iq80.leveldb.util.SequentialFile;
-import org.iq80.leveldb.util.SequentialFileImpl;
+import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.env.SequentialFile;
+import org.iq80.leveldb.fileenv.EnvImpl;
 import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceOutput;
@@ -141,7 +142,8 @@ public class LogTest
 
         // test readRecord
 
-        try (SequentialFile in = SequentialFileImpl.open(tempFile)) {
+        Env env = EnvImpl.createEnv();
+        try (SequentialFile in = env.newSequentialFile(env.toFile(tempFile.getAbsolutePath()))) {
             LogReader reader = new LogReader(in, NO_CORRUPTION_MONITOR, true, 0);
             for (Slice expected : records) {
                 Slice actual = reader.readRecord();
@@ -156,7 +158,7 @@ public class LogTest
             throws Exception
     {
         tempFile = File.createTempFile("table", ".log");
-        writer = Logs.createLogWriter(tempFile, 42, EnvImpl.createEnv());
+        writer = Logs.createLogWriter(EnvImpl.createEnv().toFile(tempFile.getAbsolutePath()), 42, EnvImpl.createEnv());
     }
 
     @AfterMethod

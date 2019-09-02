@@ -24,7 +24,7 @@ import org.iq80.leveldb.iterator.SeekingIterators;
 import org.iq80.leveldb.iterator.SliceIterator;
 import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.PureJavaCrc32C;
-import org.iq80.leveldb.util.RandomInputFile;
+import org.iq80.leveldb.env.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
 import org.iq80.leveldb.util.Snappy;

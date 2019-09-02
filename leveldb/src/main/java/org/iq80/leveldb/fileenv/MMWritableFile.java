@@ -15,9 +15,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.util;
+package org.iq80.leveldb.fileenv;
 
 import com.google.common.io.Files;
+import org.iq80.leveldb.util.Slice;
+import org.iq80.leveldb.env.WritableFile;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -28,7 +30,7 @@ import java.nio.channels.FileChannel;
 /**
  * Memory mapped file implementation of {@link WritableFile}.
  */
-public class MMWritableFile implements WritableFile
+class MMWritableFile implements WritableFile
 {
     private final File file;
     private final int pageSize;

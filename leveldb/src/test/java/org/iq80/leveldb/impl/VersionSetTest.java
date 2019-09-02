@@ -18,13 +18,13 @@
 package org.iq80.leveldb.impl;
 
 import org.iq80.leveldb.Options;
+import org.iq80.leveldb.fileenv.EnvImpl;
 import org.iq80.leveldb.table.BytewiseComparator;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.TestUtils;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -58,7 +58,7 @@ public class VersionSetTest
     private Level newLevel()
     {
         InternalKeyComparator internalKeyComparator = new InternalKeyComparator(new BytewiseComparator());
-        return new Level(1, files, new TableCache(new File("xxxxxxxxxxx"), 0, new BytewiseComparator(), new Options(), EnvImpl.createEnv()), internalKeyComparator);
+        return new Level(1, files, new TableCache(EnvImpl.createEnv().toFile("xxxxxxxxxxx"), 0, new BytewiseComparator(), new Options(), EnvImpl.createEnv()), internalKeyComparator);
     }
 
     boolean overlaps(String smallest, String largest)

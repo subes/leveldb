@@ -15,19 +15,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.iq80.leveldb.table;
+package org.iq80.leveldb.env;
 
-import org.iq80.leveldb.env.Env;
-import org.iq80.leveldb.fileenv.EnvImpl;
-import org.iq80.leveldb.fileenv.MmapLimiter;
-
-public class MMRandomInputFileTableTest
-        extends TableTest
+/**
+ * DB lock information
+ */
+public interface DbLock
 {
-    @Override
-    protected Env getEnv()
-    {
-        //force MMap files
-        return EnvImpl.createEnv(MmapLimiter.newLimiter(1000));
-    }
+    /**
+     * Is lock valid and not released
+     * @return true, if acquired
+     */
+    boolean isValid();
+
+    /**
+     * Release DB lock
+     */
+    void release();
 }
