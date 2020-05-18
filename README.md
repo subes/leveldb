@@ -242,7 +242,8 @@ Java LevelDB:
     fillrandom   :     5.86861 micros/op;    18,9 MB/s 
     overwrite    :    11.46700 micros/op;     9,6 MB/s 
 
-We did run benchmark multiple times, and unexpectedly Java did perform better on this setup. Some additional investigation are required here.
+Note: Java version perform better on this point because it uses memory-mapped Files 
+ for the log writer without enforcing page sync. 
 
 ### Read performance
 
