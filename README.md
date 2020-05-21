@@ -6,7 +6,36 @@
 ## About this fork
 This is a rewrite (port) of [LevelDB](https://github.com/google/leveldb) in
 Java. Forked from original [dain/leveldb](https://github.com/dain/leveldb/), aimed at
-improving the work already done, add missing features and make it production ready. 
+improving the work already done, add missing features, fix some implementations
+ and make it ready for production use.
+ 
+To name a few ported feature and added fix by this fork:
+* Fix multiple issues found in original source
+* Port all missing unit tests
+* Refactor file access to simplify testing and reduce code duplication.
+* Manage snapshot by reference counting instead of relying on GC
+* Make file close predictable without relying on GC and cleanup thread pool. (This was the cause of many out of memory on large DB)
+* Add bloom filter policy
+* Add LRU block cache
+* Fix compaction issues and file access statistics
+* Fine grained lock as Google Leveldb (avoid contention between read/write)
+* Improve concurrent writes with batch aggregation
+* Improved exception handling
+* Support CRC32C computation on all ByteBuffer types and byte order
+* Make CRC check possible
+* Port fault injection test
+* Implement reverse iterator
+* Implement abstract file system access
+* Add fully in-memory implementation
+* Support new file extension `.ldb` (still support old one `.sst`)
+* Configurable file size
+* Correctly release all files reference on DB `close()`
+* Run correctly on all platforms: Windows, Linux, Solaris (Mac, Android not tested)
+
+The last features not yet ported (from [Google Leveldb 1.22](https://github.com/google/leveldb/releases/tag/1.22)) are:
+* [ ] Repairer tool
+* [ ] Corruption unit test 
+
 
 ## Current status
 
@@ -15,10 +44,18 @@ refactoring until everything is ported. For now, port will also maintain its api
 as close as possible to original [dain/leveldb](https://github.com/dain/leveldb/) 
 to enable merges and compare compatibility with [fusesource/leveldbjni](https://github.com/fusesource/leveldbjni/).
 
-### TODO port (from [Google LevelDb 1.22](https://github.com/google/leveldb/releases/tag/v1.22))
+## Adding leveldb to your build
 
-* Repairer tool
-* Corruption unit test
+In a Maven project, include the `io.github.pcmind:leveldb` artifact in the dependencies section
+of your `pom.xml`:
+```xml
+<dependency>
+    <groupId>io.github.pcmind</groupId>
+    <artifactId>leveldb</artifactId>
+    <classifier>uber</classifier>
+    <version>1.2</version>
+</dependency>
+```
 
 ## API Usage:
 
@@ -41,6 +78,15 @@ DBFactory factory = new Iq80DBFactory();
 try (DB db = factory.open(new File("example"), options)) {
     // use db here....
 }
+```
+
+Open and Closing an in-memory database:
+```java
+//to open an in-memory database
+try (DB db = new DbImpl(new Options(), "example", MemEnv.createEnv())) {
+    // use db here....
+}
+
 ```
 
 Putting, Getting, and Deleting key/values.
@@ -180,24 +226,13 @@ Options options = new Options();
 factory.destroy(new File("example"), options);
 ```
 
-## Maven
-In a Maven project, include the `io.github.pcmind:leveldb` artifact in the dependencies section
-of your `pom.xml`:
-```xml
-<dependency>
-    <groupId>io.github.pcmind</groupId>
-    <artifactId>leveldb</artifactId>
-    <classifier>uber</classifier>
-    <version>0.12</version>
-</dependency>
-```
 
 ## Performance
 
-Benchmark test were ported to Java from original `db_bench` program. 
-In Java, benchmark testing should be done a differently than native code, to take in consideration JVM environment. 
+Benchmark test where ported to Java from original `db_bench` program. 
+Benchmark Java code is not the same in native code, we need to take in consideration JVM environment. 
 An additional option `jvm_warm_up_iterations` was added to configure the number 
-of warm up runs to execute before displaying results. 
+of warm up runs to execute before displaying results.
 
 ### Setup
 
@@ -224,9 +259,9 @@ At the moment of writing, original Google LevelDB readme page has similar benchm
  
 ### Write performance
 
-The "fill" benchmarks create a brand new database, in either sequential, or random 
-order. The "fillsync" benchmark flushes data to the disk after every operation; the other write operations don't force data to disk. The "overwrite" benchmark does random 
-writes that update existing keys in the database.
+The "fill" benchmarks create a new database, in either sequential, or random 
+order. The "fillsync" benchmark flushes data to the disk after every operation; the other write operations 
+don't force data to disk. The "overwrite" benchmark does random writes that update existing keys in the database.
 
 Google LevelDB:   
 
@@ -247,12 +282,12 @@ Note: Java version perform better on this point because it uses memory-mapped Fi
 
 ### Read performance
 
-We list the performance of reading sequentially and also the performance of a random lookup. Note that the database 
-created by the benchmark is quite small. Therefore the report characterizes the 
-performance of leveldb when the working set fits in memory. The cost of reading a piece 
+We list the performance of reading sequentially and random lookup. Note that the database 
+created by the benchmark is quite small. Therefore, the report characterizes the 
+performance of leveldb when the working set fits in-memory. The cost of reading a piece 
 of data that is not present in the operating system buffer cache will be dominated 
 by the one or two disk seeks needed to fetch the data from disk. Write performance 
-will be mostly unaffected by whether or not the working set fits in memory.
+will be mostly unaffected if working set fits in-memory or not.
 
 Google LevelDB:
 
