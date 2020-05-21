@@ -143,9 +143,6 @@ public final class Filename
             else if ("LOG".equals(fileName) || "LOG.old".equals(fileName)) {
                 return new FileInfo(FileType.INFO_LOG);
             }
-            else if ("LOG.old".equals(fileName)) {
-                return new FileInfo(FileType.INFO_LOG);
-            }
             else if (fileName.startsWith("MANIFEST-")) {
                 long fileNumber = parseLong(removePrefix(fileName, "MANIFEST-"));
                 return new FileInfo(FileType.DESCRIPTOR, fileNumber);

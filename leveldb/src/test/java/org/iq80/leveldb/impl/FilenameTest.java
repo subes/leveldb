@@ -88,6 +88,9 @@ public class FilenameTest
         assertFileInfo(Filename.tableFileName(-1L), -1L, Filename.FileType.TABLE);
         assertFileInfo(Filename.descriptorFileName(100), 100, Filename.FileType.DESCRIPTOR);
         assertFileInfo(Filename.tempFileName(999), 999, Filename.FileType.TEMP);
+        assertFileInfo(Filename.infoLogFileName(), 0, Filename.FileType.INFO_LOG);
+        assertFileInfo(Filename.oldInfoLogFileName(), 0, Filename.FileType.INFO_LOG);
+        assertFileInfo(Filename.sstTableFileName(344), 344, Filename.FileType.TABLE);
     }
 
     private void assertFileInfo(String file, long expectedNumber, Filename.FileType expectedType)
