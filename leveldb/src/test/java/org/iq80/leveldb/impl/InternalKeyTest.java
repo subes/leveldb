@@ -55,7 +55,7 @@ public class InternalKeyTest
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testDecodeEmpty()
     {
-        new InternalKey(new byte[0]);
+        new InternalKey(Slices.wrappedBuffer(new byte[0]));
     }
 
     private void testKey(String key, long seq, ValueType valueType)

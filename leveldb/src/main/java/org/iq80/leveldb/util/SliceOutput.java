@@ -22,8 +22,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.channels.ScatteringByteChannel;
 import java.nio.charset.Charset;
 
 public abstract class SliceOutput
@@ -206,22 +204,6 @@ public abstract class SliceOutput
      * @throws java.io.IOException if the specified stream threw an exception during I/O
      */
     public abstract int writeBytes(InputStream in, int length)
-            throws IOException;
-
-    /**
-     * Transfers the content of the specified channel to this buffer
-     * starting at the current {@code writerIndex} and increases the
-     * {@code writerIndex} by the number of the transferred bytes.
-     *
-     * @param length the maximum number of bytes to transfer
-     * @return the actual number of bytes read in from the specified channel
-     * @throws IndexOutOfBoundsException if {@code length} is greater than {@code this.writableBytes}
-     * @throws java.io.IOException if the specified channel threw an exception during I/O
-     */
-    public abstract int writeBytes(ScatteringByteChannel in, int length)
-            throws IOException;
-
-    public abstract int writeBytes(FileChannel in, int position, int length)
             throws IOException;
 
     /**

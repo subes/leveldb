@@ -19,12 +19,7 @@ package org.iq80.leveldb.util;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.channels.ClosedChannelException;
-import java.nio.channels.FileChannel;
-import java.nio.channels.GatheringByteChannel;
-import java.nio.channels.ScatteringByteChannel;
 import java.nio.charset.Charset;
 import java.util.Arrays;
 
@@ -247,43 +242,6 @@ public final class Slice
     }
 
     /**
-     * Transfers this buffer's data to the specified stream starting at the
-     * specified absolute {@code index}.
-     *
-     * @param length the number of bytes to transfer
-     * @throws IndexOutOfBoundsException if the specified {@code index} is less than {@code 0} or
-     * if {@code index + length} is greater than
-     * {@code this.capacity}
-     * @throws java.io.IOException if the specified stream threw an exception during I/O
-     */
-    public void getBytes(int index, OutputStream out, int length)
-            throws IOException
-    {
-        checkPositionIndexes(index, index + length, this.length);
-        index += offset;
-        out.write(data, index, length);
-    }
-
-    /**
-     * Transfers this buffer's data to the specified channel starting at the
-     * specified absolute {@code index}.
-     *
-     * @param length the maximum number of bytes to transfer
-     * @return the actual number of bytes written out to the specified channel
-     * @throws IndexOutOfBoundsException if the specified {@code index} is less than {@code 0} or
-     * if {@code index + length} is greater than
-     * {@code this.capacity}
-     * @throws java.io.IOException if the specified channel threw an exception during I/O
-     */
-    public int getBytes(int index, GatheringByteChannel out, int length)
-            throws IOException
-    {
-        checkPositionIndexes(index, index + length, this.length);
-        index += offset;
-        return out.write(ByteBuffer.wrap(data, index, length));
-    }
-
-    /**
      * Sets the specified 16-bit short integer at the specified absolute
      * {@code index} in this buffer.  The 16 high-order bits of the specified
      * value are ignored.
@@ -434,83 +392,6 @@ public final class Slice
             index += localReadBytes;
             length -= localReadBytes;
         } while (length > 0);
-
-        return readBytes;
-    }
-
-    /**
-     * Transfers the content of the specified source channel to this buffer
-     * starting at the specified absolute {@code index}.
-     *
-     * @param length the maximum number of bytes to transfer
-     * @return the actual number of bytes read in from the specified channel.
-     * {@code -1} if the specified channel is closed.
-     * @throws IndexOutOfBoundsException if the specified {@code index} is less than {@code 0} or
-     * if {@code index + length} is greater than {@code this.capacity}
-     * @throws java.io.IOException if the specified channel threw an exception during I/O
-     */
-    public int setBytes(int index, ScatteringByteChannel in, int length)
-            throws IOException
-    {
-        checkPositionIndexes(index, index + length, this.length);
-        index += offset;
-        ByteBuffer buf = ByteBuffer.wrap(data, index, length);
-        int readBytes = 0;
-
-        do {
-            int localReadBytes;
-            try {
-                localReadBytes = in.read(buf);
-            }
-            catch (ClosedChannelException e) {
-                localReadBytes = -1;
-            }
-            if (localReadBytes < 0) {
-                if (readBytes == 0) {
-                    return -1;
-                }
-                else {
-                    break;
-                }
-            }
-            else if (localReadBytes == 0) {
-                break;
-            }
-            readBytes += localReadBytes;
-        } while (readBytes < length);
-
-        return readBytes;
-    }
-
-    public int setBytes(int index, FileChannel in, int position, int length)
-            throws IOException
-    {
-        checkPositionIndexes(index, index + length, this.length);
-        index += offset;
-        ByteBuffer buf = ByteBuffer.wrap(data, index, length);
-        int readBytes = 0;
-
-        do {
-            int localReadBytes;
-            try {
-                localReadBytes = in.read(buf, position + readBytes);
-            }
-            catch (ClosedChannelException e) {
-                localReadBytes = -1;
-            }
-            if (localReadBytes < 0) {
-                if (readBytes == 0) {
-                    return -1;
-                }
-                else {
-                    break;
-                }
-            }
-            else if (localReadBytes == 0) {
-                break;
-            }
-            readBytes += localReadBytes;
-        } while (readBytes < length);
 
         return readBytes;
     }

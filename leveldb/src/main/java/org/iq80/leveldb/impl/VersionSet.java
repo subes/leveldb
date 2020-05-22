@@ -192,11 +192,6 @@ public class VersionSet
         return prevLogNumber;
     }
 
-    public MergingIterator iterator(ReadOptions options) throws IOException
-    {
-        return current.iterator(options);
-    }
-
     public MergingIterator makeInputIterator(Compaction c) throws IOException
     {
         ReadOptions rOptions = new ReadOptions();

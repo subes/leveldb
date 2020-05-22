@@ -18,14 +18,12 @@
 package org.iq80.leveldb.fileenv;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.io.Files;
 
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static java.util.Objects.requireNonNull;
 
 public final class FileUtils
 {
@@ -119,68 +117,5 @@ public final class FileUtils
         }
 
         return file.delete() && success;
-    }
-
-    public static boolean copyDirectoryContents(File src, File target)
-    {
-        checkArgument(src.isDirectory(), "Source dir is not a directory: %s", src);
-
-        // Don't delete symbolic link directories
-        if (isSymbolicLink(src)) {
-            return false;
-        }
-
-        target.mkdirs();
-        checkArgument(target.isDirectory(), "Target dir is not a directory: %s", src);
-
-        boolean success = true;
-        for (File file : listFiles(src)) {
-            success = copyRecursively(file, new File(target, file.getName())) && success;
-        }
-        return success;
-    }
-
-    public static boolean copyRecursively(File src, File target)
-    {
-        if (src.isDirectory()) {
-            return copyDirectoryContents(src, target);
-        }
-        else {
-            try {
-                Files.copy(src, target);
-                return true;
-            }
-            catch (IOException e) {
-                return false;
-            }
-        }
-    }
-
-    public static File newFile(String parent, String... paths)
-    {
-        requireNonNull(parent, "parent is null");
-        requireNonNull(paths, "paths is null");
-
-        return newFile(new File(parent), ImmutableList.copyOf(paths));
-    }
-
-    public static File newFile(File parent, String... paths)
-    {
-        requireNonNull(parent, "parent is null");
-        requireNonNull(paths, "paths is null");
-
-        return newFile(parent, ImmutableList.copyOf(paths));
-    }
-
-    public static File newFile(File parent, Iterable<String> paths)
-    {
-        requireNonNull(parent, "parent is null");
-        requireNonNull(paths, "paths is null");
-
-        File result = parent;
-        for (String path : paths) {
-            result = new File(result, path);
-        }
-        return result;
     }
 }

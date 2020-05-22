@@ -20,9 +20,7 @@ package org.iq80.leveldb.util;
 import java.io.DataInput;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.channels.GatheringByteChannel;
 import java.nio.charset.Charset;
 
 public final class SliceInput
@@ -337,38 +335,6 @@ public final class SliceInput
         position += length;
     }
 
-    /**
-     * Transfers this buffer's data to the specified stream starting at the
-     * current {@code position}.
-     *
-     * @param length the maximum number of bytes to transfer
-     * @return the actual number of bytes written out to the specified channel
-     * @throws IndexOutOfBoundsException if {@code length} is greater than {@code this.available()}
-     * @throws java.io.IOException if the specified channel threw an exception during I/O
-     */
-    public int readBytes(GatheringByteChannel out, int length)
-            throws IOException
-    {
-        int readBytes = slice.getBytes(position, out, length);
-        position += readBytes;
-        return readBytes;
-    }
-
-    /**
-     * Transfers this buffer's data to the specified stream starting at the
-     * current {@code position}.
-     *
-     * @param length the number of bytes to transfer
-     * @throws IndexOutOfBoundsException if {@code length} is greater than {@code this.available()}
-     * @throws java.io.IOException if the specified stream threw an exception during I/O
-     */
-    public void readBytes(OutputStream out, int length)
-            throws IOException
-    {
-        slice.getBytes(position, out, length);
-        position += length;
-    }
-
     public int skipBytes(int length)
     {
         length = Math.min(length, available());
@@ -387,19 +353,6 @@ public final class SliceInput
     public Slice slice()
     {
         return slice.slice(position, available());
-    }
-
-    /**
-     * Converts this buffer's readable bytes into a NIO buffer.  The returned
-     * buffer might or might not share the content with this buffer, while
-     * they have separate indexes and marks.  This method is identical to
-     * {@code buf.toByteBuffer(buf.position(), buf.available()())}.
-     * This method does not modify {@code position} or {@code writerIndex} of
-     * this buffer.
-     */
-    public ByteBuffer toByteBuffer()
-    {
-        return slice.toByteBuffer(position, available());
     }
 
     /**

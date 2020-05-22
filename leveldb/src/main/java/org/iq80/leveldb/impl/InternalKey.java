@@ -55,11 +55,6 @@ public class InternalKey
         this.valueType = SequenceNumber.unpackValueType(packedSequenceAndType);
     }
 
-    public InternalKey(byte[] data)
-    {
-        this(Slices.wrappedBuffer(data));
-    }
-
     public Slice getUserKey()
     {
         return userKey;

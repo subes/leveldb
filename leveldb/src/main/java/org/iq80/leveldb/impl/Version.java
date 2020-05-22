@@ -23,7 +23,6 @@ import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
 import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.iterator.InternalIterator;
-import org.iq80.leveldb.iterator.MergingIterator;
 import org.iq80.leveldb.util.SafeListBuilder;
 import org.iq80.leveldb.util.Slice;
 
@@ -120,11 +119,6 @@ public class Version
     public void setCompactionScore(double compactionScore)
     {
         this.compactionScore = compactionScore;
-    }
-
-    public MergingIterator iterator(ReadOptions options) throws IOException
-    {
-        return new MergingIterator(getLevelIterators(options), getInternalKeyComparator());
     }
 
     List<InternalIterator> getLevelIterators(ReadOptions options) throws IOException
@@ -286,11 +280,6 @@ public class Version
             // The version is now disposed.
             versionSet.removeVersion(this);
         }
-    }
-
-    public boolean isDisposed()
-    {
-        return retained.get() <= 0;
     }
 
     public boolean recordReadSample(InternalKey internalKey)

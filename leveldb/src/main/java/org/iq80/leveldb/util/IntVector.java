@@ -67,11 +67,6 @@ public class IntVector
         values = Arrays.copyOf(values, newLength);
     }
 
-    public int[] values()
-    {
-        return Arrays.copyOf(values, size);
-    }
-
     public void write(SliceOutput sliceOutput)
     {
         for (int index = 0; index < size; index++) {
