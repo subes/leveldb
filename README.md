@@ -2,6 +2,7 @@
 [![Maven Central](https://maven-badges.herokuapp.com/maven-central/io.github.pcmind/leveldb/badge.svg)](https://maven-badges.herokuapp.com/maven-central/io.github.pcmind/leveldb)
 [![TravisCI Build Status](https://travis-ci.org/pcmind/leveldb.svg?branch=master)](https://travis-ci.org/pcmind/leveldb)
 [![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/kkiy4t9983gsy6bj/branch/master?svg=true)](https://ci.appveyor.com/project/pcmind/leveldb/branch/master)
+[![Coverage Status](https://coveralls.io/repos/github/pcmind/leveldb/badge.svg?branch=master)](https://coveralls.io/github/pcmind/leveldb?branch=master) 
 
 ## About this fork
 This is a rewrite (port) of [LevelDB](https://github.com/google/leveldb) in
