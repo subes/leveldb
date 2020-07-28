@@ -56,6 +56,14 @@ of your `pom.xml`:
     <classifier>uber</classifier>
     <version>1.2</version>
 </dependency>
+
+<!-- to enable snappy compression also include snappy lib -->
+<!-- snappy is important to keep DB small and reduce IO -->
+<dependency>
+    <groupId>org.iq80.snappy</groupId>
+    <artifactId>snappy</artifactId>
+    <version>0.4</version>
+</dependency>
 ```
 
 ## API Usage:
@@ -170,10 +178,16 @@ options.comparator(comparator);
 DB db = factory.open(new File("example"), options);
 ```
     
-Disabling Compression
+Configuring Compression
+
+**Important**: compression is enabled by default if `snappy` dependency is present in the class path otherwise 
+is disabled. (See maven section)
+
+Compression should be enabled to reduce IO and disk space.
 
 ```java
 Options options = new Options();
+// or CompressionType.SNAPPY to enable compression
 options.compressionType(CompressionType.NONE);
 DB db = factory.open(new File("example"), options);
 ```
