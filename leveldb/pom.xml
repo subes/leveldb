@@ -90,6 +90,12 @@
                 <configuration>
                     <shadedArtifactAttached>true</shadedArtifactAttached>
                     <shadedClassifierName>uber</shadedClassifierName>
+                    <artifactSet>
+                        <excludes>
+                            <!-- do not include optional dependency  -->
+                            <exclude>org.iq80.snappy:snappy:jar</exclude>
+                        </excludes>
+                    </artifactSet>
                     <relocations>
                         <relocation>
                             <pattern>com.google.common</pattern>
