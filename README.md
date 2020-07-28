@@ -244,14 +244,13 @@ factory.destroy(new File("example"), options);
 
 ## Performance
 
-Benchmark test where ported to Java from original `db_bench` program. 
-Benchmark Java code is not the same in native code, we need to take in consideration JVM environment. 
-An additional option `jvm_warm_up_iterations` was added to configure the number 
-of warm up runs to execute before displaying results.
+Benchmark test is a port to Java of original `db_bench` program. 
+For better result in JVM environment, an additional option `jvm_warm_up_iterations` is available to configure the number 
+of warm up runs to execute before displaying results. 
 
 ### Setup
 
-We use a data base with a million entries.  Each entry has a 16 byte key, and a 100 byte value. 
+We use a database with a million entries.  Each entry has a 16 byte key, and a 100 byte value. 
 Values used by the benchmark compress to about half their original size. Snappy artifact use for benchmark is: `org.xerial.snappy:snappy-java:jar:1.1.2.6` 
 
     LevelDB:    iq80 leveldb version 0.11
