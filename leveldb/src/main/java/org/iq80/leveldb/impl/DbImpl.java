@@ -1531,9 +1531,14 @@ public class DbImpl
         checkArgument(outputNumber != 0);
 
         long currentEntries = compactionState.builder.getEntryCount();
-        compactionState.builder.finish();
-
-        long currentBytes = compactionState.builder.getFileSize();
+        long currentBytes = 0;
+        try {
+            compactionState.builder.finish();
+            currentBytes = compactionState.builder.getFileSize();
+        }
+        finally {
+            compactionState.builder = null;
+        }
         compactionState.currentFileSize = currentBytes;
         compactionState.totalBytes += currentBytes;
 
@@ -1542,8 +1547,6 @@ public class DbImpl
                 compactionState.currentSmallest,
                 compactionState.currentLargest);
         compactionState.outputs.add(currentFileMetaData);
-
-        compactionState.builder = null;
 
         compactionState.outfile.force();
         compactionState.outfile.close();
@@ -2019,6 +2022,6 @@ public class DbImpl
     @Override
     public String toString()
     {
-        return  this.getClass().getName() + "{" + databaseDir + "}";
+        return this.getClass().getName() + "{" + databaseDir + "}";
     }
 }

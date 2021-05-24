@@ -19,11 +19,11 @@ package org.iq80.leveldb.table;
 
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.Options;
+import org.iq80.leveldb.env.WritableFile;
 import org.iq80.leveldb.util.PureJavaCrc32C;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
 import org.iq80.leveldb.util.Snappy;
-import org.iq80.leveldb.env.WritableFile;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -293,8 +293,7 @@ public class TableBuilder
 
     public void abandon()
     {
-        checkState(!closed, "table is finished");
-        closed = true;
+        closed = true; //mark it as unusable
     }
 
     public static int crc32c(Slice data, CompressionType type)
