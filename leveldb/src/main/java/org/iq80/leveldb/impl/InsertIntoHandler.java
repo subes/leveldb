@@ -38,12 +38,12 @@ final class InsertIntoHandler
     @Override
     public void put(Slice key, Slice value)
     {
-        memTable.add(sequence++, VALUE, key, value);
+        memTable.add(sequence++, VALUE, key.copySlice(), value.copySlice());
     }
 
     @Override
     public void delete(Slice key)
     {
-        memTable.add(sequence++, DELETION, key, Slices.EMPTY_SLICE);
+        memTable.add(sequence++, DELETION, key.copySlice(), Slices.EMPTY_SLICE);
     }
 }

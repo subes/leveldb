@@ -683,6 +683,67 @@ public class DbImplTest
     }
 
     @Test(dataProvider = "options")
+    public void testSliceMutationAfterWriteShouldNotAffectInternalState(final Options options)
+            throws Exception
+    {
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir);
+        final WriteBatchImpl updates = new WriteBatchImpl();
+        final Slice key = new Slice("foo".getBytes());
+        final Slice value = new Slice("v1".getBytes());
+        updates.put(key, value);
+        db.db.write(updates);
+
+        //precondition
+        assertEquals(db.get("foo"), "v1");
+
+        //change value should have no effect
+        value.setByte(1, '1');
+        assertEquals(db.get("foo"), "v1");
+
+        //change key should have no effect
+        key.setByte(0, 'x');
+        assertEquals(db.get("foo"), "v1");
+
+        //change in delete key should have no effect
+        final WriteBatchImpl updates1 = new WriteBatchImpl();
+        final Slice key1 = new Slice("foo".getBytes());
+        updates1.delete(key1);
+        db.db.write(updates1);
+        assertNull(db.get("foo"));
+        key1.setByte(0, 'x');
+        assertNull(db.get("foo"));
+    }
+
+    @Test(dataProvider = "options")
+    public void testArrayMutationAfterWriteShouldNotAffectInternalState(final Options options)
+            throws Exception
+    {
+        DbStringWrapper db = new DbStringWrapper(options, databaseDir);
+
+        final byte[] key = {'f', 'o', 'o'};
+        final byte[] value = {'v', '1'};
+        db.db.put(key, value);
+
+        //precondition
+        assertEquals(db.get("foo"), "v1");
+
+        //change value should have no effect
+        value[1] = '2';
+        assertEquals(db.get("foo"), "v1");
+
+        //change key should have no effect
+        key[1] = '1';
+        assertEquals(db.get("foo"), "v1");
+
+        //change in delete key should have no effect
+        final byte[] key1 = {'f', 'o', 'o'};
+        db.db.delete(key1);
+        assertNull(db.get("foo"));
+        key1[0] = 'x';
+        assertNull(db.get("foo"));
+    }
+
+    @Test(dataProvider = "options")
     public void testRecoverDuringMemtableCompaction(final Options options)
             throws Exception
     {
