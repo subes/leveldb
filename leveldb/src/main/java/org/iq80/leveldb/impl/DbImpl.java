@@ -165,7 +165,7 @@ public class DbImpl
         immutableMemTable = null;
 
         ThreadFactory compactionThreadFactory = new ThreadFactoryBuilder()
-                .setNameFormat("leveldb-" + dbname + "-%s")
+                .setNameFormat("leveldb-" + databaseDir.getName() + "-%s")
                 .setUncaughtExceptionHandler((t, e) -> {
                     mutex.lock();
                     try {
