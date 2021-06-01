@@ -29,11 +29,11 @@ import org.iq80.leveldb.Options;
 import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.env.Env;
 import org.iq80.leveldb.env.File;
+import org.iq80.leveldb.env.SequentialFile;
 import org.iq80.leveldb.iterator.InternalIterator;
 import org.iq80.leveldb.iterator.MergingIterator;
 import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.SafeListBuilder;
-import org.iq80.leveldb.env.SequentialFile;
 import org.iq80.leveldb.util.Slice;
 
 import java.io.IOException;
@@ -723,6 +723,7 @@ public class VersionSet
         InternalKey largest = range.getValue();
 
         List<FileMetaData> levelUpInputs = getOverlappingInputs(level + 1, smallest, largest);
+        addBoundaryInputs(internalKeyComparator, current.getFiles(level + 1), levelUpInputs);
 
         // Get entire range covered by compaction
         range = getRange(levelInputs, levelUpInputs);
@@ -745,6 +746,7 @@ public class VersionSet
                 InternalKey newLimit = range.getValue();
 
                 List<FileMetaData> expanded1 = getOverlappingInputs(level + 1, newStart, newLimit);
+                addBoundaryInputs(internalKeyComparator, current.getFiles(level + 1), expanded1);
                 if (expanded1.size() == levelUpInputs.size()) {
                     options.logger().log(
                             "Expanding@%s %s+%s (%s+%s bytes) to %s+%s (%s+%s bytes)",
