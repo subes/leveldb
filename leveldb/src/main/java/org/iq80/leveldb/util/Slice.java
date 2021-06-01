@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
-import java.util.Arrays;
 
 import static com.google.common.base.Preconditions.checkPositionIndex;
 import static com.google.common.base.Preconditions.checkPositionIndexes;
@@ -214,15 +213,14 @@ public final class Slice
 
     public byte[] getBytes(int index, int length)
     {
+        checkPositionIndexes(index, index + length, this.length);
+        if (length == 0 && this.data.length == 0) {
+            return data; //zero size array is immutable
+        }
         index += offset;
-        if (index == 0) {
-            return Arrays.copyOf(data, length);
-        }
-        else {
-            byte[] value = new byte[length];
-            System.arraycopy(data, index, value, 0, length);
-            return value;
-        }
+        byte[] value = new byte[length];
+        System.arraycopy(data, index, value, 0, length);
+        return value;
     }
 
     /**
@@ -407,12 +405,7 @@ public final class Slice
      */
     public Slice copySlice(int index, int length)
     {
-        checkPositionIndexes(index, index + length, this.length);
-
-        index += offset;
-        byte[] copiedArray = new byte[length];
-        System.arraycopy(data, index, copiedArray, 0, length);
-        return new Slice(copiedArray);
+        return new Slice(copyBytes(index, length));
     }
 
     public byte[] copyBytes()
