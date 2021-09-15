@@ -17,6 +17,7 @@
  */
 package org.iq80.leveldb.impl;
 
+import com.google.common.base.CaseFormat;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.UnsignedBytes;
@@ -30,6 +31,7 @@ import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.Snapshot;
 import org.iq80.leveldb.WriteBatch;
 import org.iq80.leveldb.WriteOptions;
+import org.iq80.leveldb.compression.Compressions;
 import org.iq80.leveldb.env.DbLock;
 import org.iq80.leveldb.env.Env;
 import org.iq80.leveldb.env.File;
@@ -50,6 +52,7 @@ import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
+import org.testng.collections.Lists;
 
 import java.io.IOException;
 import java.math.BigInteger;
@@ -101,13 +104,21 @@ public class DbImplTest
     @DataProvider(name = "options")
     public Object[][] optionsProvider()
     {
-        return new Object[][] {
-                {new OptionsDesc("Default")},
+        List<Object[]> params = Lists.newArrayList(
+                new Object[]{new OptionsDesc("Default")},
                 //new OptionsDesc("Reuse").reuseLog(true)},
-                {new OptionsDesc("Bloom Filter").filterPolicy(new BloomFilterPolicy(10))},
-                {new OptionsDesc("No Compression").compressionType(CompressionType.NONE)},
-                {new OptionsDesc("Snappy").compressionType(CompressionType.SNAPPY)}
-        };
+                new Object[]{new OptionsDesc("Bloom Filter").filterPolicy(new BloomFilterPolicy(10))},
+                new Object[]{new OptionsDesc("No Compression").compressionType(CompressionType.NONE)}
+        );
+        for (CompressionType type : CompressionType.values()) {
+            if (Compressions.isAvailable(type)) {
+                params.add(new Object[] {new OptionsDesc(CaseFormat.UPPER_UNDERSCORE.to(CaseFormat.UPPER_CAMEL, type.toString())).compressionType(type)});
+            }
+            else {
+                System.err.println("Compression " + type + " unavailable for testing");
+            }
+        }
+        return params.toArray(new Object[0][]);
     }
 
     @Test(dataProvider = "options")

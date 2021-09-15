@@ -24,7 +24,10 @@ import com.google.common.cache.RemovalListener;
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.ReadOptions;
+import org.iq80.leveldb.compression.Decompressor;
 import org.iq80.leveldb.env.Env;
+import org.iq80.leveldb.env.File;
+import org.iq80.leveldb.env.RandomInputFile;
 import org.iq80.leveldb.iterator.InternalTableIterator;
 import org.iq80.leveldb.table.BlockHandleSliceWeigher;
 import org.iq80.leveldb.table.CacheKey;
@@ -35,10 +38,8 @@ import org.iq80.leveldb.table.UserComparator;
 import org.iq80.leveldb.util.Closeables;
 import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.LRUCache;
-import org.iq80.leveldb.env.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
 
-import org.iq80.leveldb.env.File;
 import java.io.IOException;
 import java.util.concurrent.ExecutionException;
 
@@ -52,7 +53,9 @@ public class TableCache
     public TableCache(final File databaseDir,
                       int tableCacheSize,
                       final UserComparator userComparator,
-                      final Options options, Env env)
+                      final Options options,
+                      final Env env,
+                      final Decompressor decompressor)
     {
         requireNonNull(databaseDir, "databaseName is null");
         blockCache = options.cacheSize() == 0 ? null : LRUCache.createCache((int) options.cacheSize(), new BlockHandleSliceWeigher());
@@ -78,7 +81,7 @@ public class TableCache
                     public TableAndFile load(Long fileNumber)
                             throws IOException
                     {
-                        return new TableAndFile(databaseDir, fileNumber, userComparator, options, blockCache, env);
+                        return new TableAndFile(databaseDir, fileNumber, userComparator, options, blockCache, env, decompressor);
                     }
                 });
     }
@@ -158,7 +161,7 @@ public class TableCache
     {
         private final Table table;
 
-        private TableAndFile(File databaseDir, long fileNumber, UserComparator userComparator, Options options, ILRUCache<CacheKey, Slice> blockCache, Env env)
+        private TableAndFile(File databaseDir, long fileNumber, UserComparator userComparator, Options options, ILRUCache<CacheKey, Slice> blockCache, Env env, Decompressor decompressor)
                 throws IOException
         {
             final File tableFile = tableFileName(databaseDir, fileNumber);
@@ -166,7 +169,7 @@ public class TableCache
             table = Closeables.wrapResource(() -> {
                 final FilterPolicy filterPolicy = (FilterPolicy) options.filterPolicy();
                 return new Table(source, userComparator,
-                        options.paranoidChecks(), blockCache, filterPolicy);
+                        options.paranoidChecks(), blockCache, filterPolicy, decompressor);
             }, source);
         }
 

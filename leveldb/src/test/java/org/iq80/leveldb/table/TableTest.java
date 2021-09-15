@@ -22,6 +22,7 @@ import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DBComparator;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.ReadOptions;
+import org.iq80.leveldb.compression.Compressions;
 import org.iq80.leveldb.env.Env;
 import org.iq80.leveldb.env.File;
 import org.iq80.leveldb.env.RandomInputFile;
@@ -40,7 +41,6 @@ import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.LRUCache;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
-import org.iq80.leveldb.util.Snappy;
 import org.iq80.leveldb.util.TestUtils;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -81,7 +81,7 @@ public abstract class TableTest
     {
         RandomInputFile open = defaultEnv.newRandomAccessFile(file);
         try {
-            return new Table(open, comparator, verifyChecksums, LRUCache.createCache(8 << 5, new BlockHandleSliceWeigher()), filterPolicy);
+            return new Table(open, comparator, verifyChecksums, LRUCache.createCache(8 << 5, new BlockHandleSliceWeigher()), filterPolicy, Compressions.decompressor());
         }
         catch (Exception e) {
             Closeables.closeQuietly(open);
@@ -285,10 +285,21 @@ public abstract class TableTest
         assertBetween(c.approximateOffsetOf("xyz"), 610000, 612000);
     }
 
-    @Test
-    public void testTableTestApproximateOffsetOfCompressed() throws Exception
+    @DataProvider(name = "compressionTypesArgsProvider")
+    public Object[][] compressionTypesArgsProvider()
     {
-        if (!Snappy.available()) {
+        return new Object[][] {
+                new Object[] {CompressionType.SNAPPY},
+                new Object[] {CompressionType.LZ4},
+                new Object[] {CompressionType.LZ4_HC},
+
+        };
+    }
+
+    @Test(dataProvider = "compressionTypesArgsProvider")
+    public void testTableTestApproximateOffsetOfCompressed(CompressionType compressionType) throws IOException
+    {
+        if (!Compressions.isAvailable(compressionType)) {
             System.out.println("skipping compression tests");
             return;
         }
@@ -302,7 +313,7 @@ public abstract class TableTest
 
         Options options = new Options();
         options.blockSize(1024);
-        options.compressionType(CompressionType.SNAPPY);
+        options.compressionType(compressionType);
         c.finish(options, defaultEnv);
 
         // Expected upper and lower bounds of space used by compressible strings.
@@ -384,7 +395,7 @@ public abstract class TableTest
         protected void finish(Options options, Env env, UserComparator comp, KVMap data) throws IOException
         {
             StringSink sink = new StringSink();
-            TableBuilder builder = new TableBuilder(options, sink, comp);
+            TableBuilder builder = new TableBuilder(options, sink, comp, Compressions.tryToGetCompressor(options.compressionType()));
 
             for (Map.Entry<Slice, Slice> e : data.entrySet()) {
                 builder.add(e.getKey(), e.getValue());
@@ -397,7 +408,7 @@ public abstract class TableTest
             // Open the table
             StringSource source = new StringSource(sink.content);
             ILRUCache<CacheKey, Slice> blockCache = LRUCache.createCache(options.cacheSize() > 0 ? (int) options.cacheSize() : 8 << 20, new BlockHandleSliceWeigher());
-            table = new Table(source, comp, options.paranoidChecks(), blockCache, (FilterPolicy) options.filterPolicy());
+            table = new Table(source, comp, options.paranoidChecks(), blockCache, (FilterPolicy) options.filterPolicy(), Compressions.decompressor());
         }
 
         public long approximateOffsetOf(String key)
@@ -991,7 +1002,7 @@ public abstract class TableTest
         reopenFile();
         Options options = new Options().blockSize(blockSize).blockRestartInterval(blockRestartInterval);
         try (WritableFile writableFile = defaultEnv.newWritableFile(defaultEnv.toFile(file.getPath()))) {
-            TableBuilder builder = new TableBuilder(options, writableFile, new BytewiseComparator());
+            TableBuilder builder = new TableBuilder(options, writableFile, new BytewiseComparator(), Compressions.tryToGetCompressor(options.compressionType()));
 
             for (BlockEntry entry : entries) {
                 builder.add(entry);

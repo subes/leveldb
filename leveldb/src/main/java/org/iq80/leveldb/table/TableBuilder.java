@@ -19,11 +19,11 @@ package org.iq80.leveldb.table;
 
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.Options;
+import org.iq80.leveldb.compression.Compressor;
 import org.iq80.leveldb.env.WritableFile;
 import org.iq80.leveldb.util.PureJavaCrc32C;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
-import org.iq80.leveldb.util.Snappy;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -43,7 +43,7 @@ public class TableBuilder
 
     private final int blockRestartInterval;
     private final int blockSize;
-    private final CompressionType compressionType;
+    private final Compressor compressor;
 
     private final WritableFile file;
     private final BlockBuilder dataBlockBuilder;
@@ -71,7 +71,7 @@ public class TableBuilder
 
     private long position;
 
-    public TableBuilder(Options options, WritableFile file, UserComparator userComparator)
+    public TableBuilder(Options options, WritableFile file, UserComparator userComparator, Compressor selectedCompressor)
     {
         requireNonNull(options, "options is null");
         requireNonNull(file, "file is null");
@@ -81,7 +81,7 @@ public class TableBuilder
 
         blockRestartInterval = options.blockRestartInterval();
         blockSize = options.blockSize();
-        compressionType = options.compressionType();
+        compressor = selectedCompressor;
 
         dataBlockBuilder = new BlockBuilder((int) Math.min(blockSize * 1.1, options.maxFileSize()), blockRestartInterval, userComparator);
 
@@ -191,15 +191,15 @@ public class TableBuilder
         // attempt to compress the block
         Slice blockContents = raw;
         CompressionType blockCompressionType = CompressionType.NONE;
-        if (compressionType == CompressionType.SNAPPY) {
-            ensureCompressedOutputCapacity(maxCompressedLength(raw.length()));
+        if (compressor != null) {
             try {
-                int compressedSize = Snappy.compress(raw.getRawArray(), raw.getRawOffset(), raw.length(), compressedOutput.getRawArray(), 0);
+                ensureCompressedOutputCapacity(compressor.maxCompressedLength(raw.length()));
+                int compressedSize = compressor.compress(raw.getRawArray(), raw.getRawOffset(), raw.length(), compressedOutput.getRawArray(), 0);
 
                 // Don't use the compressed data if compressed less than 12.5%,
                 if (compressedSize < raw.length() - (raw.length() / 8)) {
                     blockContents = compressedOutput.slice(0, compressedSize);
-                    blockCompressionType = CompressionType.SNAPPY;
+                    blockCompressionType = compressor.type();
                 }
             }
             catch (IOException ignored) {
@@ -219,31 +219,6 @@ public class TableBuilder
         file.append(trailer);
         position += blockContents.length() + trailer.length();
         return blockHandle;
-    }
-
-    private static int maxCompressedLength(int length)
-    {
-        // Compressed data can be defined as:
-        //    compressed := item* literal*
-        //    item       := literal* copy
-        //
-        // The trailing literal sequence has a space blowup of at most 62/60
-        // since a literal of length 60 needs one tag byte + one extra byte
-        // for length information.
-        //
-        // Item blowup is trickier to measure.  Suppose the "copy" op copies
-        // 4 bytes of data.  Because of a special check in the encoding code,
-        // we produce a 4-byte copy only if the offset is < 65536.  Therefore
-        // the copy op takes 3 bytes to encode, and this type of item leads
-        // to at most the 62/60 blowup for representing literals.
-        //
-        // Suppose the "copy" op copies 5 bytes of data.  If the offset is big
-        // enough, it will take 5 bytes to encode the copy op.  Therefore the
-        // worst case here is a one-byte literal followed by a five-byte copy.
-        // I.e., 6 bytes of input turn into 7 bytes of "compressed" data.
-        //
-        // This last factor dominates the blowup, so the final estimate is:
-        return 32 + length + (length / 6);
     }
 
     public void finish()

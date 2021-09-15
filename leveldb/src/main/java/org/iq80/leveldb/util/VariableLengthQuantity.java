@@ -17,6 +17,8 @@
  */
 package org.iq80.leveldb.util;
 
+import com.google.common.base.Preconditions;
+
 import java.nio.ByteBuffer;
 
 public final class VariableLengthQuantity
@@ -72,6 +74,42 @@ public final class VariableLengthQuantity
             sliceOutput.writeByte((value >>> 14) | highBitMask);
             sliceOutput.writeByte((value >>> 21) | highBitMask);
             sliceOutput.writeByte(value >>> 28);
+        }
+    }
+
+    public static int writeVariableLengthInt(int value, byte[] output, int offset)
+    {
+        Preconditions.checkArgument(output != null && output.length - offset >= 5, "output array must be able to contain value of at least 5 bytes");
+        int highBitMask = 0x80;
+        if (value < (1 << 7) && value >= 0) {
+            output[offset] = (byte) value;
+            return 1;
+        }
+        else if (value < (1 << 14) && value > 0) {
+            output[offset] = (byte) (value | highBitMask);
+            output[offset + 1] = (byte) (value >>> 7);
+            return 2;
+        }
+        else if (value < (1 << 21) && value > 0) {
+            output[offset] = (byte) (value | highBitMask);
+            output[offset + 1] = (byte) ((value >>> 7) | highBitMask);
+            output[offset + 2] = (byte) (value >>> 14);
+            return 3;
+        }
+        else if (value < (1 << 28) && value > 0) {
+            output[offset] = (byte) (value | highBitMask);
+            output[offset + 1] = (byte) ((value >>> 7) | highBitMask);
+            output[offset + 2] = (byte) ((value >>> 14) | highBitMask);
+            output[offset + 3] = (byte) (value >>> 21);
+            return 4;
+        }
+        else {
+            output[offset] = (byte) (value | highBitMask);
+            output[offset + 1] = (byte) ((value >>> 7) | highBitMask);
+            output[offset + 2] = (byte) ((value >>> 14) | highBitMask);
+            output[offset + 3] = (byte) ((value >>> 21) | highBitMask);
+            output[offset + 4] = (byte) (value >>> 28);
+            return 5;
         }
     }
 

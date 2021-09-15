@@ -22,6 +22,7 @@ import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.CharStreams;
 import com.google.common.io.Files;
+import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DB;
 import org.iq80.leveldb.DBFactory;
 import org.iq80.leveldb.DBIterator;
@@ -29,6 +30,9 @@ import org.iq80.leveldb.Options;
 import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.WriteBatch;
 import org.iq80.leveldb.WriteOptions;
+import org.iq80.leveldb.compression.Compressions;
+import org.iq80.leveldb.compression.Compressor;
+import org.iq80.leveldb.compression.Decompressor;
 import org.iq80.leveldb.fileenv.FileUtils;
 import org.iq80.leveldb.table.BloomFilterPolicy;
 import org.iq80.leveldb.util.Closeables;
@@ -36,7 +40,6 @@ import org.iq80.leveldb.util.PureJavaCrc32C;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceOutput;
 import org.iq80.leveldb.util.Slices;
-import org.iq80.leveldb.util.Snappy;
 
 import java.io.File;
 import java.io.IOException;
@@ -48,6 +51,7 @@ import java.util.Date;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
@@ -213,23 +217,33 @@ public class DbBenchmark
                 method = this::crc32c;
             }
             else if (benchmark.equals("snappycomp")) {
-                if (Snappy.available()) {
-                    method = this::snappyCompress;
+                if (Compressions.isAvailable(CompressionType.SNAPPY)) {
+                    method = t -> compress(t, CompressionType.SNAPPY);
                 }
             }
             else if (benchmark.equals("snappyuncomp")) {
-                if (Snappy.available()) {
-                    method = this::snappyUncompressDirectBuffer;
+                if (Compressions.isAvailable(CompressionType.SNAPPY)) {
+                    method = t -> uncompressDirectBuffer(t, CompressionType.SNAPPY);
                 }
             }
-            else if (benchmark.equals("unsnap-array")) {
-                if (Snappy.available()) {
-                    method = this::snappyUncompressArray;
+            else if (benchmark.equals("lz4fastcomp")) {
+                if (Compressions.isAvailable(CompressionType.LZ4)) {
+                    method = t -> compress(t, CompressionType.LZ4);
                 }
             }
-            else if (benchmark.equals("unsnap-direct")) {
-                if (Snappy.available()) {
-                    method = this::snappyUncompressDirectBuffer;
+            else if (benchmark.equals("lz4fastuncomp")) {
+                if (Compressions.isAvailable(CompressionType.LZ4)) {
+                    method = ts -> uncompressDirectBuffer(ts, CompressionType.LZ4);
+                }
+            }
+            else if (benchmark.equals("lz4hccomp")) {
+                if (Compressions.isAvailable(CompressionType.LZ4_HC)) {
+                    method = t -> compress(t, CompressionType.LZ4_HC);
+                }
+            }
+            else if (benchmark.equals("lz4hcuncomp")) {
+                if (Compressions.isAvailable(CompressionType.LZ4_HC)) {
+                    method = ts -> uncompressDirectBuffer(ts, CompressionType.LZ4_HC);
                 }
             }
             else if (benchmark.equals("heapprofile")) {
@@ -375,17 +389,20 @@ public class DbBenchmark
         }
 
         // See if snappy is working by attempting to compress a compressible string
-        String text = "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy";
-        byte[] compressedText = null;
+        byte[] text = "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy".getBytes();
+        int compressedBytes = 0;
         try {
-            compressedText = Snappy.compress(text);
+            final Compressor compressor = Compressions.requireCompressor(CompressionType.SNAPPY);
+            byte[] compressedText = new byte[compressor.maxCompressedLength(text.length)];
+            compressedBytes = compressor
+                    .compress(text, 0, text.length, compressedText, 0);
         }
         catch (Exception ignored) {
         }
-        if (compressedText == null) {
+        if (compressedBytes == 0) {
             System.out.printf("WARNING: Snappy compression is not enabled%n");
         }
-        else if (compressedText.length > text.length()) {
+        else if (compressedBytes > text.length) {
             System.out.printf("WARNING: Snappy compression is not effective%n");
         }
     }
@@ -527,7 +544,6 @@ public class DbBenchmark
 
     private void readMissing(ThreadState thread)
     {
-
         for (int i = 0; i < reads; i++) {
             byte[] key = formatNumber(thread.rand.nextInt(num));
             db.get(key);
@@ -634,10 +650,11 @@ public class DbBenchmark
         thread.stats.addMessage(label);
     }
 
-    private void snappyCompress(ThreadState thread)
+    private void compress(ThreadState thread, CompressionType compressionType)
     {
+        final Compressor compressor = Compressions.requireCompressor(compressionType);
         byte[] raw = newGenerator().generate(new Options().blockSize());
-        byte[] compressedOutput = new byte[Snappy.maxCompressedLength(raw.length)];
+        byte[] compressedOutput = new byte[compressor.maxCompressedLength(raw.length)];
 
         long bytes = 0;
         long produced = 0;
@@ -645,7 +662,7 @@ public class DbBenchmark
         // attempt to compress the block
         while (bytes < 1024 * 1048576) {  // Compress 1G
             try {
-                int compressedSize = Snappy.compress(raw, 0, raw.length, compressedOutput, 0);
+                int compressedSize = compressor.compress(raw, 0, raw.length, compressedOutput, 0);
                 bytes += raw.length;
                 produced += compressedSize;
             }
@@ -665,51 +682,22 @@ public class DbBenchmark
         return new RandomGenerator(compressionRatio);
     }
 
-    private void snappyUncompressArray(ThreadState thread)
+    private void uncompressDirectBuffer(ThreadState thread, CompressionType compressionType)
     {
+        final Compressor compressor = Compressions.requireCompressor(compressionType);
+        final Decompressor decompressor = Compressions.decompressor();
         int inputSize = new Options().blockSize();
-        byte[] compressedOutput = new byte[Snappy.maxCompressedLength(inputSize)];
-        byte[] raw = newGenerator().generate(inputSize);
-        long bytes = 0;
-        int compressedLength;
-        try {
-            compressedLength = Snappy.compress(raw, 0, raw.length, compressedOutput, 0);
-        }
-        catch (IOException e) {
-            Throwables.propagateIfPossible(e, AssertionError.class);
-            return;
-        }
-        // attempt to uncompress the block
-        while (bytes < 5L * 1024 * 1048576) {  // Compress 1G
-            try {
-                Snappy.uncompress(compressedOutput, 0, compressedLength, raw, 0);
-                bytes += inputSize;
-            }
-            catch (IOException ignored) {
-                thread.stats.addMessage("(snappy failure)");
-                throw Throwables.propagate(ignored);
-            }
-
-            thread.stats.finishedSingleOp();
-        }
-        thread.stats.addBytes(bytes);
-    }
-
-    private void snappyUncompressDirectBuffer(ThreadState thread)
-    {
-        int inputSize = new Options().blockSize();
-        byte[] compressedOutput = new byte[Snappy.maxCompressedLength(inputSize)];
+        byte[] compressedOutput = new byte[compressor.maxCompressedLength(inputSize)];
         byte[] raw = newGenerator().generate(inputSize);
         int compressedLength;
         try {
-            compressedLength = Snappy.compress(raw, 0, raw.length, compressedOutput, 0);
+            compressedLength = compressor.compress(raw, 0, raw.length, compressedOutput, 0);
         }
         catch (IOException e) {
             Throwables.propagateIfPossible(e, AssertionError.class);
             return;
         }
 
-        ByteBuffer uncompressedBuffer = ByteBuffer.allocateDirect(inputSize);
         ByteBuffer compressedBuffer = ByteBuffer.allocateDirect(compressedLength);
         compressedBuffer.put(compressedOutput, 0, compressedLength);
 
@@ -717,14 +705,13 @@ public class DbBenchmark
         // attempt to uncompress the block
         while (bytes < 5L * 1024 * 1048576) {  // Compress 1G
             try {
-                uncompressedBuffer.clear();
                 compressedBuffer.position(0);
                 compressedBuffer.limit(compressedLength);
-                Snappy.uncompress(compressedBuffer, uncompressedBuffer);
+                Objects.requireNonNull(decompressor.uncompress(compressionType, compressedBuffer));
                 bytes += inputSize;
             }
             catch (IOException ignored) {
-                thread.stats.addMessage("(snappy failure)");
+                thread.stats.addMessage("(" + compressionType + " failure)");
                 Throwables.propagateIfPossible(ignored, AssertionError.class);
                 return;
             }

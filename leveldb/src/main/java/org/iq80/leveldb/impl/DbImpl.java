@@ -32,6 +32,8 @@ import org.iq80.leveldb.ReadOptions;
 import org.iq80.leveldb.Snapshot;
 import org.iq80.leveldb.WriteBatch;
 import org.iq80.leveldb.WriteOptions;
+import org.iq80.leveldb.compression.Compressions;
+import org.iq80.leveldb.compression.Compressor;
 import org.iq80.leveldb.env.DbLock;
 import org.iq80.leveldb.env.Env;
 import org.iq80.leveldb.env.File;
@@ -57,7 +59,6 @@ import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.SliceInput;
 import org.iq80.leveldb.util.SliceOutput;
 import org.iq80.leveldb.util.Slices;
-import org.iq80.leveldb.util.Snappy;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -114,6 +115,7 @@ public class DbImpl
     private final SnapshotList snapshots = new SnapshotList(mutex);
     private final WriteBatchImpl tmpBatch = new WriteBatchImpl();
     private final Env env;
+    private final Compressor compressor;
 
     private LogWriter log;
 
@@ -140,7 +142,8 @@ public class DbImpl
         this.options = sanitizeOptions(databaseDir, rawOptions);
         this.ownsLogger = this.options.logger() != rawOptions.logger();
 
-        if (this.options.compressionType() == CompressionType.SNAPPY && !Snappy.available()) {
+        this.compressor = Compressions.tryToGetCompressor(this.options.compressionType());
+        if (compressor == null) {
             // Disable snappy if it's not available.
             this.options.compressionType(CompressionType.NONE);
         }
@@ -183,7 +186,7 @@ public class DbImpl
 
         // Reserve ten files or so for other uses and give the rest to TableCache.
         int tableCacheSize = options.maxOpenFiles() - DbConstants.NUM_NON_TABLE_CACHE_FILES;
-        tableCache = new TableCache(databaseDir, tableCacheSize, new InternalUserComparator(internalKeyComparator), options, env);
+        tableCache = new TableCache(databaseDir, tableCacheSize, new InternalUserComparator(internalKeyComparator), options, env, Compressions.decompressor());
 
         // create the version set
 
@@ -1332,7 +1335,7 @@ public class DbImpl
             InternalKey smallest = null;
             InternalKey largest = null;
             try (WritableFile writableFile = env.newWritableFile(file)) {
-                TableBuilder tableBuilder = new TableBuilder(options, writableFile, new InternalUserComparator(internalKeyComparator));
+                TableBuilder tableBuilder = new TableBuilder(options, writableFile, new InternalUserComparator(internalKeyComparator), compressor);
 
                 try (InternalIterator it = data.iterator()) {
                     for (boolean valid = it.seekToFirst(); valid; valid = it.next()) {
@@ -1517,7 +1520,7 @@ public class DbImpl
         }
         File file = databaseDir.child(Filename.tableFileName(fileNumber));
         compactionState.outfile = env.newWritableFile(file);
-        compactionState.builder = new TableBuilder(options, compactionState.outfile, new InternalUserComparator(internalKeyComparator));
+        compactionState.builder = new TableBuilder(options, compactionState.outfile, new InternalUserComparator(internalKeyComparator), compressor);
     }
 
     private void finishCompactionOutputFile(CompactionState compactionState)

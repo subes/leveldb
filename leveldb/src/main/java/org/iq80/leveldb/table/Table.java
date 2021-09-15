@@ -20,15 +20,14 @@ package org.iq80.leveldb.table;
 import com.google.common.base.Throwables;
 import org.iq80.leveldb.DBException;
 import org.iq80.leveldb.ReadOptions;
+import org.iq80.leveldb.compression.Decompressor;
+import org.iq80.leveldb.env.RandomInputFile;
 import org.iq80.leveldb.iterator.SeekingIterators;
 import org.iq80.leveldb.iterator.SliceIterator;
 import org.iq80.leveldb.util.ILRUCache;
 import org.iq80.leveldb.util.PureJavaCrc32C;
-import org.iq80.leveldb.env.RandomInputFile;
 import org.iq80.leveldb.util.Slice;
 import org.iq80.leveldb.util.Slices;
-import org.iq80.leveldb.util.Snappy;
-import org.iq80.leveldb.util.VariableLengthQuantity;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -43,7 +42,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.Objects.requireNonNull;
-import static org.iq80.leveldb.CompressionType.SNAPPY;
+import static org.iq80.leveldb.CompressionType.NONE;
 
 public final class Table
         implements Closeable
@@ -56,16 +55,18 @@ public final class Table
     private final BlockHandle metaindexBlockHandle;
     private final RandomInputFile source;
     private final ILRUCache<CacheKey, Slice> blockCache;
+    private final Decompressor decompressor;
     private final FilterBlockReader filter;
     //use ref count to release resource early
     //external user iterator are required to be closed
     private final AtomicInteger refCount = new AtomicInteger(1);
 
-    public Table(RandomInputFile source, Comparator<Slice> comparator, boolean paranoidChecks, ILRUCache<CacheKey, Slice> blockCache, final FilterPolicy filterPolicy)
+    public Table(RandomInputFile source, Comparator<Slice> comparator, boolean paranoidChecks, ILRUCache<CacheKey, Slice> blockCache, final FilterPolicy filterPolicy, Decompressor decompressor)
             throws IOException
     {
         this.source = source;
         this.blockCache = blockCache;
+        this.decompressor = decompressor;
         requireNonNull(source, "source is null");
         long size = source.size();
         checkArgument(size >= Footer.ENCODED_LENGTH, "File is corrupt: size must be at least %s bytes", Footer.ENCODED_LENGTH);
@@ -196,11 +197,9 @@ public final class Table
         Slice uncompressedData;
         content.position(position);
         content.limit(limit - BlockTrailer.ENCODED_LENGTH);
-        if (blockTrailer.getCompressionType() == SNAPPY) {
-            int uncompressedLength = uncompressedLength(content);
-            final ByteBuffer uncompressedScratch = ByteBuffer.allocateDirect(uncompressedLength);
-            Snappy.uncompress(content, uncompressedScratch);
-            uncompressedData = Slices.copiedBuffer(uncompressedScratch);
+        if (blockTrailer.getCompressionType() != NONE) {
+            final ByteBuffer uncompressedExactBuf = decompressor.uncompress(blockTrailer.getCompressionType(), content);
+            uncompressedData = Slices.avoidCopiedBuffer(uncompressedExactBuf);
         }
         else {
             uncompressedData = Slices.avoidCopiedBuffer(content);
@@ -228,12 +227,6 @@ public final class Table
             }
             return null;
         }
-    }
-
-    private int uncompressedLength(ByteBuffer data)
-    {
-        assert refCount.get() > 0;
-        return VariableLengthQuantity.readVariableLengthInt(data.duplicate());
     }
 
     /**

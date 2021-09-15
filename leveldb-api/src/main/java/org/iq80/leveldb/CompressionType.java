@@ -28,7 +28,9 @@ public enum CompressionType
     // NOTE: do not change the values of existing entries, as these are
     // part of the persistent format on disk.
     NONE(0x00),
-    SNAPPY(0x01);
+    SNAPPY(0x01),
+    LZ4(0x04),
+    LZ4_HC(0x05);
 
     public static CompressionType getCompressionTypeByPersistentId(int persistentId)
     {

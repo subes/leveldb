@@ -32,6 +32,7 @@ To name a few ported feature and added fix by this fork:
 * Configurable file size
 * Correctly release all files reference on DB `close()`
 * Run correctly on all platforms: Windows, Linux, Solaris (Mac, Android not tested)
+* Support LZ4 compression
 
 The last features not yet ported (from [Google Leveldb 1.22](https://github.com/google/leveldb/releases/tag/1.22)) are:
 * [ ] Repairer tool
@@ -64,7 +65,15 @@ of your `pom.xml`:
     <artifactId>snappy</artifactId>
     <version>0.4</version>
 </dependency>
+
+<!-- to enable LZ4 compression also include LZ4-java lib -->
+<dependency>
+    <groupId>org.lz4</groupId>
+    <artifactId>lz4-java</artifactId>
+    <version>1.8.0</version>
+</dependency>
 ```
+
 
 ## API Usage:
 
