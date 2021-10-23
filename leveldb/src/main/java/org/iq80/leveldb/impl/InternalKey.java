@@ -145,4 +145,16 @@ public class InternalKey
     {
         return userKey.length() + SIZE_OF_LONG;
     }
+
+    /**
+     * If user key refer to partial view of data, create a new InternalKey with only relevant bytes and enable
+     * the other to be garbage collected.
+     */
+    public InternalKey compact()
+    {
+        if (userKey.length() != userKey.getRawArray().length) {
+            return new InternalKey(userKey.copySlice(), sequenceNumber, valueType);
+        }
+        return this;
+    }
 }
