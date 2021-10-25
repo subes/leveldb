@@ -17,6 +17,7 @@
  */
 package org.iq80.leveldb.benchmark;
 
+import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
@@ -74,6 +75,7 @@ public class DbBenchmark
     private final int bloomFilterBits;
     private final int maxFileSize;
     private final int blockSize;
+    private final CompressionType compressionType;
     private DB db;
     private int num;
     private int reads;
@@ -101,7 +103,9 @@ public class DbBenchmark
         num = (Integer) flags.get(Flag.num);
         reads = (Integer) (flags.get(Flag.reads) == null ? flags.get(Flag.num) : flags.get(Flag.reads));
         valueSize = (Integer) flags.get(Flag.value_size);
+        compressionType = (CompressionType) flags.get(Flag.compression);
         entriesPerBatch = 1;
+        Preconditions.checkArgument(checkCompressionAvailability(compressionType), "Compression %s is unavailable", compressionType);
 
         databaseDir = new File((String) flags.get(Flag.db));
 
@@ -217,32 +221,32 @@ public class DbBenchmark
                 method = this::crc32c;
             }
             else if (benchmark.equals("snappycomp")) {
-                if (Compressions.isAvailable(CompressionType.SNAPPY)) {
+                if (checkCompressionAvailability(CompressionType.SNAPPY)) {
                     method = t -> compress(t, CompressionType.SNAPPY);
                 }
             }
             else if (benchmark.equals("snappyuncomp")) {
-                if (Compressions.isAvailable(CompressionType.SNAPPY)) {
+                if (checkCompressionAvailability(CompressionType.SNAPPY)) {
                     method = t -> uncompressDirectBuffer(t, CompressionType.SNAPPY);
                 }
             }
             else if (benchmark.equals("lz4fastcomp")) {
-                if (Compressions.isAvailable(CompressionType.LZ4)) {
+                if (checkCompressionAvailability(CompressionType.LZ4)) {
                     method = t -> compress(t, CompressionType.LZ4);
                 }
             }
             else if (benchmark.equals("lz4fastuncomp")) {
-                if (Compressions.isAvailable(CompressionType.LZ4)) {
+                if (checkCompressionAvailability(CompressionType.LZ4)) {
                     method = ts -> uncompressDirectBuffer(ts, CompressionType.LZ4);
                 }
             }
             else if (benchmark.equals("lz4hccomp")) {
-                if (Compressions.isAvailable(CompressionType.LZ4_HC)) {
+                if (checkCompressionAvailability(CompressionType.LZ4_HC)) {
                     method = t -> compress(t, CompressionType.LZ4_HC);
                 }
             }
             else if (benchmark.equals("lz4hcuncomp")) {
-                if (Compressions.isAvailable(CompressionType.LZ4_HC)) {
+                if (checkCompressionAvailability(CompressionType.LZ4_HC)) {
                     method = ts -> uncompressDirectBuffer(ts, CompressionType.LZ4_HC);
                 }
             }
@@ -278,9 +282,17 @@ public class DbBenchmark
                     return;
                 }
             }
-
         }
         db.close();
+    }
+
+    private boolean checkCompressionAvailability(CompressionType compressionType)
+    {
+        if (compressionType == CompressionType.NONE || Compressions.isAvailable(compressionType)) {
+            return true;
+        }
+        System.err.println("Compression type " + compressionType + " is not available");
+        return false;
     }
 
     private void runBenchmark(int n, String name, BenchmarkMethod method) throws Exception
@@ -460,6 +472,7 @@ public class DbBenchmark
         if (writeBufferSize != null) {
             options.writeBufferSize(writeBufferSize);
         }
+        options.compressionType(compressionType);
         db = factory.open(databaseDir, options);
     }
 
@@ -717,8 +730,8 @@ public class DbBenchmark
             }
 
             thread.stats.finishedSingleOp();
-            thread.stats.addBytes(bytes);
         }
+        thread.stats.addBytes(bytes);
     }
 
     private void openBench(ThreadState thread) throws IOException
@@ -786,7 +799,6 @@ public class DbBenchmark
                 System.err.println("Invalid argument " + arg);
                 System.exit(1);
             }
-
         }
         System.out.println("Using factory: " + FACTORY_CLASS);
         warmUpJVM(flags, (Integer) flags.get(Flag.jvm_warm_up_iterations));
@@ -850,8 +862,11 @@ public class DbBenchmark
                 "fill100K",
                 // "crc32c",
                 "snappycomp",
-                "unsnap-array",
-                "unsnap-direct",
+                "snappyuncomp",
+                "lz4fastcomp",
+                "lz4fastuncomp",
+                "lz4hccomp",
+                "lz4hcuncomp",
                 "stats"
         )) {
             @Override
@@ -868,6 +883,14 @@ public class DbBenchmark
             public Object parseValue(String value)
             {
                 return Double.parseDouble(value);
+            }
+        },
+
+        compression(CompressionType.NONE) {
+            @Override
+            public Object parseValue(String value)
+            {
+                return CompressionType.valueOf(value);
             }
         },
 
