@@ -10,7 +10,7 @@
 
     <groupId>io.github.pcmind</groupId>
     <artifactId>leveldb-project</artifactId>
-    <version>1.3-SNAPSHOT</version>
+    <version>1.3-inv3</version>
     <packaging>pom</packaging>
 
     <name>${project.groupId}:${project.artifactId}</name>
@@ -107,4 +107,17 @@
             </plugin>
         </plugins>
     </build>
+    
+      <distributionManagement>
+		<repository>
+			<id>invesdwin-oss</id>
+			<name>invesdwin.de-releases</name>
+			<url>https://invesdwin.de/repo/invesdwin-oss</url>
+		</repository>
+		<snapshotRepository>
+			<id>invesdwin-oss</id>
+			<name>invesdwin.de-snapshots</name>
+			<url>https://invesdwin.de/repo/invesdwin-oss</url>
+		</snapshotRepository>
+	</distributionManagement>
 </project>
